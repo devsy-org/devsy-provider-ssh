@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.0...v1.1.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* replace broken badge SVG with shields.io badge ([#3](https://github.com/devsy-org/devsy-provider-ssh/issues/3)) ([a73d0c4](https://github.com/devsy-org/devsy-provider-ssh/commit/a73d0c43783bd7499553f050983b86c598e1b2e9))
+
 ## [1.1.0](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.0.0...v1.1.0) (2026-04-19)
 
 
