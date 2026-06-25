@@ -14,18 +14,17 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy-provider-ssh/pkg/options"
+	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/devsy-org/log"
 	"github.com/kballard/go-shellquote"
 )
 
 type SSHProvider struct {
 	Config           *options.Options
-	Log              log.Logger
 	WorkingDirectory string
 }
 
-func NewProvider(logs log.Logger) (*SSHProvider, error) {
+func NewProvider() (*SSHProvider, error) {
 	config, err := options.FromEnv()
 	if err != nil {
 		return nil, err
@@ -34,7 +33,6 @@ func NewProvider(logs log.Logger) (*SSHProvider, error) {
 	// create provider
 	provider := &SSHProvider{
 		Config: config,
-		Log:    logs,
 	}
 
 	return provider, nil
@@ -139,13 +137,13 @@ func execSSHCommand(provider *SSHProvider, command string, output io.Writer) err
 
 	err = cmd.Run()
 	if err != nil {
-		provider.Log.Error(stderrBuf.String())
+		log.Error(stderrBuf.String())
 		return err
 	}
 
 	// A non-POSIX shell has been detected: falling back to copy and execute scripts
 	if strings.Contains(stderrBuf.String(), "fish: Unsupported") {
-		provider.Log.Warn(
+		log.Warn(
 			"A non-POSIX shell has been detected: falling back to copy and execute scripts",
 		)
 

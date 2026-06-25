@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/devsy-org/devsy-provider-ssh/pkg/ssh"
-	"github.com/devsy-org/log"
 	"github.com/spf13/cobra"
 )
 
@@ -18,7 +17,7 @@ func NewInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Init account",
 		RunE: func(_ *cobra.Command, args []string) error {
-			sshProvider, err := ssh.NewProvider(log.Default)
+			sshProvider, err := ssh.NewProvider()
 			if err != nil {
 				return err
 			}
@@ -26,7 +25,6 @@ func NewInitCmd() *cobra.Command {
 			return cmd.Run(
 				context.Background(),
 				sshProvider,
-				log.Default,
 			)
 		},
 	}
@@ -38,7 +36,6 @@ func NewInitCmd() *cobra.Command {
 func (cmd *InitCmd) Run(
 	ctx context.Context,
 	providerSSH *ssh.SSHProvider,
-	logs log.Logger,
 ) error {
 	return ssh.Init(providerSSH)
 }
