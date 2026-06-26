@@ -96,7 +96,7 @@ func setupDevsyCLI() {
 	err = out.Close()
 	framework.ExpectNoError(err)
 
-	verifyCmd := exec.Command(binPath, "version") // #nosec G204,G702 -- path is safely constructed
+	verifyCmd := exec.Command(binPath, "--version") // #nosec G204,G702 -- path is safely constructed
 	err = verifyCmd.Run()
 	framework.ExpectNoError(err)
 }
