@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.2](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.1...v1.1.2) (2026-06-27)
+
+
+### Bug Fixes
+
+* **e2e:** update devsy to v1.0.0 and fix CLI command forms ([#13](https://github.com/devsy-org/devsy-provider-ssh/issues/13)) ([ca21bea](https://github.com/devsy-org/devsy-provider-ssh/commit/ca21bead7195153940b2c01988b2751bfd985bff))
+
 ## [1.1.1](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.0...v1.1.1) (2026-04-19)
 
 
