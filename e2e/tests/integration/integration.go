@@ -96,7 +96,10 @@ func setupDevsyCLI() {
 	err = out.Close()
 	framework.ExpectNoError(err)
 
-	verifyCmd := exec.Command(binPath, "version") // #nosec G204,G702 -- path is safely constructed
+	verifyCmd := exec.Command(
+		binPath,
+		"--version",
+	) // #nosec G204,G702 -- path is safely constructed
 	err = verifyCmd.Run()
 	framework.ExpectNoError(err)
 }
@@ -247,7 +250,7 @@ echo line3`,
 		})
 
 		ginkgo.It("should run devsy up", func() {
-			cmd := exec.Command("bin/devsy", "up", "--debug", "--ide=none", "../")
+			cmd := exec.Command("bin/devsy", "workspace", "up", "--debug", "--ide=none", "../")
 			err := cmd.Run()
 			framework.ExpectNoError(err)
 		})
@@ -260,7 +263,14 @@ echo line3`,
 		})
 
 		ginkgo.It("should cleanup devsy workspace", func() {
-			cmd := exec.Command("bin/devsy", "delete", "--debug", "--force", "devsy-provider-ssh")
+			cmd := exec.Command(
+				"bin/devsy",
+				"workspace",
+				"delete",
+				"--debug",
+				"--force",
+				"devsy-provider-ssh",
+			)
 			err := cmd.Run()
 			framework.ExpectNoError(err)
 		})
