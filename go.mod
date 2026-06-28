@@ -6,8 +6,8 @@ require (
 	github.com/devsy-org/devsy v1.0.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
-	github.com/onsi/ginkgo/v2 v2.28.1
-	github.com/onsi/gomega v1.39.1
+	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/gomega v1.40.0
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.50.0
 )
@@ -142,7 +142,7 @@ require (
 	github.com/google/go-cmp v0.7.0 // indirect
 	github.com/google/go-containerregistry v0.21.5 // indirect
 	github.com/google/go-containerregistry/pkg/authn/kubernetes v0.0.0-20260414223304-7a662782a11f // indirect
-	github.com/google/pprof v0.0.0-20260115054156-294ebfa9ad83 // indirect
+	github.com/google/pprof v0.0.0-20260402051712-545e8a4df936 // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/handlers v1.5.2 // indirect
