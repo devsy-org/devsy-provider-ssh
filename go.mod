@@ -3,7 +3,7 @@ module github.com/devsy-org/devsy-provider-ssh
 go 1.26.5
 
 require (
-	github.com/devsy-org/devsy v1.13.0
+	github.com/devsy-org/devsy v1.14.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/onsi/ginkgo/v2 v2.32.0
@@ -173,7 +173,7 @@ require (
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
-	github.com/moby/buildkit v0.32.0 // indirect
+	github.com/moby/buildkit v0.32.1 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
