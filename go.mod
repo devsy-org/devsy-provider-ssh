@@ -3,7 +3,7 @@ module github.com/devsy-org/devsy-provider-ssh
 go 1.26.5
 
 require (
-	github.com/devsy-org/devsy v1.17.0
+	github.com/devsy-org/devsy v1.17.1
 	github.com/goccy/go-yaml v1.19.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/onsi/ginkgo/v2 v2.32.2
@@ -95,7 +95,7 @@ require (
 	github.com/devsy-org/apiserver v1.5.3 // indirect
 	github.com/devsy-org/ssh v1.2.7 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
-	github.com/docker/cli v29.7.1+incompatible // indirect
+	github.com/docker/cli v29.7.2+incompatible // indirect
 	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
 	github.com/docker/go-connections v0.8.1 // indirect
