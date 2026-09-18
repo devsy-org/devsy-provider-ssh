@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.34](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.33...v1.1.34) (2026-09-18)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/onsi/gomega to v1.43.1 ([#111](https://github.com/devsy-org/devsy-provider-ssh/issues/111)) ([d1bb8dd](https://github.com/devsy-org/devsy-provider-ssh/commit/d1bb8dd3d4855e86382dc7e6bd6eff527431f65f))
+
 ## [1.1.33](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.32...v1.1.33) (2026-09-17)
 
 
