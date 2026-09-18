@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.35](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.34...v1.1.35) (2026-09-18)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/onsi/ginkgo/v2 to v2.33.0 ([#113](https://github.com/devsy-org/devsy-provider-ssh/issues/113)) ([fa3776a](https://github.com/devsy-org/devsy-provider-ssh/commit/fa3776a2cbc1502fb4ed879defa1418054d692b9))
+
 ## [1.1.34](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.33...v1.1.34) (2026-09-18)
 
 
