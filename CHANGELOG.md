@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.38](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.37...v1.1.38) (2026-10-04)
+
+
+### Bug Fixes
+
+* **deps:** update module github.com/devsy-org/devsy to v1.20.0 ([#124](https://github.com/devsy-org/devsy-provider-ssh/issues/124)) ([8b92cbb](https://github.com/devsy-org/devsy-provider-ssh/commit/8b92cbbca5ed59471ed0406ab1e000921f720771))
+
 ## [1.1.37](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.36...v1.1.37) (2026-09-25)
 
 
