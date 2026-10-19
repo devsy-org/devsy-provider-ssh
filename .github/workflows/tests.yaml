@@ -16,6 +16,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: unit tests
+        run: go test -race -covermode=atomic . ./cmd/... ./hack/... ./pkg/...
+        env:
+          CGO_ENABLED: "1"
+
       - name: install goreleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:

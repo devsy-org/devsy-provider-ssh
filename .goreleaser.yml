@@ -2,9 +2,6 @@ version: 2
 project_name: devsy-provider-ssh
 builds:
   - id: build
-    hooks:
-      pre:
-        - sh -c 'CGO_ENABLED=1 go test $(go list ./... | grep -v -e /test -e /e2e) -race -coverprofile=dist/profile.out -covermode=atomic'
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
     overrides:
