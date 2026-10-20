@@ -3,8 +3,10 @@
 package ssh
 
 import (
+	"errors"
 	"io"
 	"os"
+	"syscall"
 
 	"github.com/muesli/cancelreader"
 )
@@ -20,3 +22,5 @@ func cancellableFile(reader *os.File) (cancelreader.CancelReader, error) {
 	}
 	return cancelreader.NewReader(reader)
 }
+
+func isPipeWriteClosed(err error) bool { return errors.Is(err, syscall.EPIPE) }

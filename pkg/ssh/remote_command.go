@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	devsyssh "github.com/devsy-org/devsy/pkg/ssh"
@@ -19,7 +20,7 @@ import (
 )
 
 // Streams keeps protocol bytes separate from diagnostics. Non-file Stdin closers
-// are closed when the built-in session ends; other readers must be finite buffers.
+// are closed when either transport ends; other readers must be finite buffers.
 type Streams struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -60,11 +61,38 @@ func (provider *SSHProvider) execRemoteScript(
 	}
 	// #nosec G204 -- SSH arguments are explicit provider options; script is one encoded argument.
 	cmd := exec.CommandContext(ctx, "ssh", append(args, command)...)
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = streams.Stdin, streams.Stdout, streams.Stderr
-	if err := cmd.Run(); err != nil {
+	cmd.Stdout, cmd.Stderr = streams.Stdout, streams.Stderr
+	if err := runExternal(cmd, streams.Stdin); err != nil {
 		return fmt.Errorf("execute remote /bin/sh script: %w", err)
 	}
 	return nil
+}
+
+func runExternal(cmd *exec.Cmd, input io.Reader) error {
+	if input == nil {
+		return cmd.Run()
+	}
+	if file, ok := input.(*os.File); ok {
+		cmd.Stdin = file
+		return cmd.Run()
+	}
+	reader, err := cancellableInput(input)
+	if err != nil {
+		return fmt.Errorf("prepare SSH stdin: %w", err)
+	}
+	defer func() { _ = reader.Close() }()
+	stdin, err := cmd.StdinPipe()
+	if err != nil {
+		return fmt.Errorf("open SSH stdin: %w", err)
+	}
+	defer func() { _ = stdin.Close() }()
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	copy := startStdinCopy(reader, stdin)
+	err = cmd.Wait()
+	_ = stdin.Close()
+	return errors.Join(err, copy.finish())
 }
 
 func (provider *SSHProvider) builtinConfig(
@@ -170,23 +198,10 @@ func runSession(session *cryptossh.Session, command string, input io.Reader) err
 	if err := session.Start(command); err != nil {
 		return err
 	}
-	copied := make(chan struct{})
-	copyResult := make(chan error, 1)
-	go func() {
-		defer close(copied)
-		_, copyErr := io.Copy(stdin, reader)
-		copyResult <- copyErr
-		_ = stdin.Close()
-	}()
+	copy := startStdinCopy(reader, stdin)
 	err = session.Wait()
-	var copyErr error
-	select {
-	case copyErr = <-copyResult:
-	default:
-	}
-	reader.Cancel()
-	<-copied
-	return errors.Join(err, copyErr)
+	_ = stdin.Close()
+	return errors.Join(err, copy.finish())
 }
 
 func cancellableInput(input io.Reader) (cancelreader.CancelReader, error) {
@@ -204,8 +219,15 @@ func cancellableInput(input io.Reader) (cancelreader.CancelReader, error) {
 	}
 }
 
-type closingInput struct{ io.ReadCloser }
+type closingInput struct {
+	io.ReadCloser
+	once     sync.Once
+	closeErr error
+}
 
-func (input *closingInput) Cancel() bool { return input.ReadCloser.Close() == nil }
+func (input *closingInput) Cancel() bool { return input.Close() == nil }
 
-func (input *closingInput) Close() error { return input.ReadCloser.Close() }
+func (input *closingInput) Close() error {
+	input.once.Do(func() { input.closeErr = input.ReadCloser.Close() })
+	return input.closeErr
+}

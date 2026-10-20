@@ -95,7 +95,7 @@ not Windows or GUI acceptance.
 ## Local validation
 
 - CI-parity unit suite: `go test -race -covermode=atomic . ./cmd/... ./hack/... ./pkg/...` PASS.
-- SSH package statement coverage: 78.1%.
+- SSH package statement coverage after the stdin review fixes: 81.4%.
 - E2E package compilation without host setup: PASS.
 - Diff-scoped golangci-lint with macOS and Windows build contexts: zero issues.
 - `prek run --all-files`: all applicable hooks PASS on the refreshed base.
@@ -117,8 +117,36 @@ to require exit 127, empty stdout, and separate nonempty stderr containing the
 command name. The three subsequent ordered whole-workspace CLI checks were
 skipped on that first run and must not be reported as acceptance passes.
 
-The production source fingerprint and reviewed binary above remain unchanged;
-the final-head CI and reviewer gates must run again after this test-only fix.
+The production source fingerprint and reviewed binary remained unchanged for
+that test-only correction. The subsequent stdin review fixes below change
+production code and require new final-head CI and reviewer coverage.
+
+## Greptile stdin lifecycle follow-up
+
+Greptile reviewed `4722dd2c489ed2b440dfcacb6585ea6e2e97a1c1` at confidence 4/5
+and identified two valid issues. External SSH could hang after cancellation or
+remote exit with an idle non-file stdin reader. Built-in SSH could discard a
+genuine source error that arrived after remote completion.
+
+Both were reproduced before the fix: a bounded idle-input test timed out and a
+late custom read error incorrectly returned success. Both transports now join
+owned non-file stdin copies before reading their final results. External file
+stdin remains borrowed directly. Source read errors are recorded separately
+from destination writes, preserving genuine source failures (including EPIPE)
+while allowing a successful remote command to close unread input. Owned
+non-file closers are closed once, including start failure.
+
+Regressions cover idle-input exit zero, cancellation, late custom source errors,
+source EPIPE, unread 1 MiB input with remote success, and ownership cleanup.
+Native Windows CI also exercises the external-child variants without a Unix
+shell stub. Independent bounded review passed the fixes, including five runs
+of the unread-large-input reproducer. Local race tests pass; new final-head
+CI and fresh Greptile/CodeRabbit reviews remain required.
+
+The earlier runtime artifact fingerprints and matrices are explicitly evidence
+for the earlier production revision. The launcher encoding is unchanged by
+this stdin follow-up; they are not claimed as runtime execution of the new
+stdin implementation.
 
 ## Review gates
 

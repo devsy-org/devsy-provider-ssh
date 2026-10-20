@@ -177,3 +177,46 @@ func (writer readyWriter) Write(data []byte) (int, error) {
 	}
 	return len(data), nil
 }
+
+func TestWindowsExternalInputLifecycle(t *testing.T) {
+	if mode := os.Getenv("DEVSY_TEST_EXTERNAL_INPUT_CHILD"); mode != "" {
+		if mode == contextCancelScenario {
+			_, err := io.Copy(io.Discard, os.Stdin)
+			requireNoError(t, err)
+		}
+		return
+	}
+	for _, scenario := range []string{"remote-exit", contextCancelScenario, "large-unread"} {
+		t.Run(scenario, func(t *testing.T) { runWindowsExternalInput(t, scenario) })
+	}
+}
+
+func runWindowsExternalInput(t *testing.T, scenario string) {
+	t.Helper()
+	reader, writer := io.Pipe()
+	defer func() { _ = reader.Close(); _ = writer.Close() }()
+	input := &observedInput{ReadCloser: reader, started: make(chan struct{})}
+	if scenario == "large-unread" {
+		input.ReadCloser = io.NopCloser(bytes.NewReader(make([]byte, 1<<20)))
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	// #nosec G204,G702 -- Launch the controlled test executable as the external child.
+	cmd := exec.CommandContext(ctx, os.Args[0], "-test.run=^TestWindowsExternalInputLifecycle$")
+	cmd.Env = append(os.Environ(), "DEVSY_TEST_EXTERNAL_INPUT_CHILD="+scenario)
+	result := make(chan error, 1)
+	go func() { result <- runExternal(cmd, input) }()
+	select {
+	case <-input.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stdin copy did not start")
+	}
+	cancelCommand := scenario == contextCancelScenario
+	if cancelCommand {
+		cancel()
+	}
+	err := waitInputResult(t, result, input)
+	if (err != nil) != cancelCommand {
+		t.Fatalf("unexpected external completion: %v", err)
+	}
+}

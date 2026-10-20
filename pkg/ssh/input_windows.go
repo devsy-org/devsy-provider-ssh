@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -45,4 +46,8 @@ func cancellableFile(file *os.File) (cancelreader.CancelReader, error) {
 		return nil, fmt.Errorf("open duplicated SSH input pipe")
 	}
 	return &closingInput{ReadCloser: owned}, nil
+}
+
+func isPipeWriteClosed(err error) bool {
+	return errors.Is(err, windows.ERROR_BROKEN_PIPE) || errors.Is(err, windows.ERROR_NO_DATA)
 }
