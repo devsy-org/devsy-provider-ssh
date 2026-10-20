@@ -1,6 +1,6 @@
 module github.com/devsy-org/devsy-provider-ssh
 
-go 1.26.8
+go 1.26.10
 
 require (
 	github.com/devsy-org/devsy v1.23.2
