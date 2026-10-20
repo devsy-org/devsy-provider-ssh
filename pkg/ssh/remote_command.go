@@ -64,7 +64,7 @@ func (provider *SSHProvider) execRemoteScript(
 	cmd := exec.CommandContext(ctx, "ssh", append(args, command)...)
 	cmd.Stdout, cmd.Stderr = streams.Stdout, streams.Stderr
 	if err := runExternal(cmd, streams.Stdin); err != nil {
-		return fmt.Errorf("execute remote /bin/sh script: %w", err)
+		return fmt.Errorf("execute remote /bin/sh script: %w", errors.Join(ctx.Err(), err))
 	}
 	return nil
 }

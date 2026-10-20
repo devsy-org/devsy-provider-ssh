@@ -45,19 +45,22 @@ func Execute() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	err := rootCmd.ExecuteContext(ctx)
 	stop()
-	if err != nil {
-		if sshExit, ok := errors.AsType[*ssh.ExitError](err); ok {
-			os.Exit(sshExit.ExitStatus())
-		}
-		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
-			if len(exitErr.Stderr) > 0 {
-				log.Error(string(exitErr.Stderr))
-			}
-			os.Exit(exitErr.ExitCode())
-		}
-
+	if err == nil {
+		return
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		log.Fatal(err)
 	}
+	if sshExit, ok := errors.AsType[*ssh.ExitError](err); ok {
+		os.Exit(sshExit.ExitStatus())
+	}
+	if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+		if len(exitErr.Stderr) > 0 {
+			log.Error(string(exitErr.Stderr))
+		}
+		os.Exit(exitErr.ExitCode())
+	}
+	log.Fatal(err)
 }
 
 // BuildRoot creates the SSH provider command tree.

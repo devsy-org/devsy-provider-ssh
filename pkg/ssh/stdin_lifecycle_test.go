@@ -19,6 +19,29 @@ import (
 
 const contextCancelScenario = "context-cancel"
 
+func TestExternalCancellationPreservesSourceError(t *testing.T) {
+	provider := fakeExternalSSH(t)
+	input := newLateErrorInput()
+	defer func() { _ = input.Close() }()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() { result <- Command(ctx, provider, "exec cat", Streams{Stdin: input}) }()
+	select {
+	case <-input.started:
+	case <-time.After(3 * time.Second):
+		t.Fatal("stdin copy did not start")
+	}
+	cancel()
+	err := waitInputResult(t, result, input)
+	if !errors.Is(err, context.Canceled) || !errors.Is(err, errInputRead) {
+		t.Fatalf("lost cancellation or source error: %v", err)
+	}
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
+		t.Fatalf("lost started SSH process error: %v", err)
+	}
+}
+
 type lateErrorInput struct {
 	started  chan struct{}
 	released chan struct{}

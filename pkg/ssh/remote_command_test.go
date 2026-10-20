@@ -103,15 +103,33 @@ func TestExternalStreamsAndExit(t *testing.T) {
 }
 
 func TestExternalCancellation(t *testing.T) {
-	provider := fakeExternalSSH(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
-	defer cancel()
-	start := time.Now()
-	if err := Command(ctx, provider, "exec sleep 30", Streams{}); err == nil {
-		t.Fatal("expected cancellation")
-	}
-	if time.Since(start) > 5*time.Second {
-		t.Fatal("cancellation did not terminate SSH")
+	for _, deadline := range []bool{false, true} {
+		name := "canceled"
+		if deadline {
+			name = "deadline"
+		}
+		t.Run(name, func(t *testing.T) {
+			provider := fakeExternalSSH(t)
+			ctx, cancel := context.WithCancel(context.Background())
+			expected := context.Canceled
+			if deadline {
+				cancel()
+				ctx, cancel = context.WithTimeout(context.Background(), 100*time.Millisecond)
+				expected = context.DeadlineExceeded
+			} else {
+				timer := time.AfterFunc(100*time.Millisecond, cancel)
+				defer timer.Stop()
+			}
+			defer cancel()
+			start := time.Now()
+			err := Command(ctx, provider, "exec sleep 30", Streams{})
+			if !errors.Is(err, expected) {
+				t.Fatalf("expected context identity %v: %v", expected, err)
+			}
+			if time.Since(start) > 5*time.Second {
+				t.Fatal("cancellation did not terminate SSH")
+			}
+		})
 	}
 }
 
