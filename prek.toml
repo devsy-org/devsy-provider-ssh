@@ -76,8 +76,8 @@ rev = "v2.15.0"
 
 [[repos.hooks]]
 id = "golangci-lint"
-language_version = "1.26.8"
+language_version = "1.26.10"
 
 [[repos.hooks]]
 id = "golangci-lint-fmt"
-language_version = "1.26.8"
+language_version = "1.26.10"
