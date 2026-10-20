@@ -62,7 +62,7 @@ func Init(ctx context.Context, provider *SSHProvider, streams Streams) error {
 		return provider.execRemoteScript(
 			ctx,
 			script,
-			Streams{Stdin: streams.Stdin, Stdout: output, Stderr: streams.Stderr},
+			Streams{Stdout: output, Stderr: streams.Stderr},
 		)
 	}
 	if err := checkRemotePlatform(run); err != nil {

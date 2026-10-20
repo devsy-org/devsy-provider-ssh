@@ -20,7 +20,8 @@ import (
 )
 
 // Streams keeps protocol bytes separate from diagnostics. Non-file Stdin closers
-// are closed when either transport ends; other readers must be finite buffers.
+// transfer ownership to the transport and must unblock concurrent Read on Close.
+// Other non-file readers must be finite buffers; caller-owned files remain open.
 type Streams struct {
 	Stdin  io.Reader
 	Stdout io.Writer

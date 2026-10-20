@@ -41,6 +41,6 @@ func (cmd *InitCmd) Run(
 	return ssh.Init(
 		ctx,
 		providerSSH,
-		ssh.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+		ssh.Streams{Stdout: os.Stdout, Stderr: os.Stderr},
 	)
 }
