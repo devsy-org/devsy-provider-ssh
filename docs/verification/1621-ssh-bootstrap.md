@@ -105,6 +105,21 @@ not Windows or GUI acceptance.
   `${SSH_PROVIDER} init` and `${SSH_PROVIDER} command` interface is unchanged.
   No generated descriptor was added to the source tree.
 
+## First CI run and test correction
+
+On provider head `c0c159aaed22ea789515380406e655b945006f29`, native Windows pipe
+checks, lint, pre-commit, unit tests, snapshot builds, and Linux shell-account
+provisioning passed. Linux E2E reported 14 passes, one failure, and three skips:
+the existing failing-command assertion required Bash's English phrase
+`command not found`, while Dash correctly emitted
+`/bin/sh: 1: not-a-command: not found`. The follow-up changes only that assertion
+to require exit 127, empty stdout, and separate nonempty stderr containing the
+command name. The three subsequent ordered whole-workspace CLI checks were
+skipped on that first run and must not be reported as acceptance passes.
+
+The production source fingerprint and reviewed binary above remain unchanged;
+the final-head CI and reviewer gates must run again after this test-only fix.
+
 ## Review gates
 
 Local CodeRabbit authentication was verified, but automatic approval review

@@ -251,12 +251,15 @@ echo line3`,
 				"PORT=22",
 				"USE_BUILTIN_SSH=false",
 			}...)
-			output, err := cmd.CombinedOutput()
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
 			framework.ExpectError(err)
-			output = bytes.TrimSpace(output)
-			msg := string(output)
-			gomega.Expect(msg).To(gomega.ContainSubstring("not-a-command"))
-			gomega.Expect(msg).To(gomega.ContainSubstring("command not found"))
+			gomega.Expect(cmd.ProcessState).NotTo(gomega.BeNil())
+			gomega.Expect(cmd.ProcessState.ExitCode()).To(gomega.Equal(127))
+			gomega.Expect(stdout.Bytes()).To(gomega.BeEmpty())
+			gomega.Expect(stderr.Bytes()).NotTo(gomega.BeEmpty())
+			gomega.Expect(stderr.String()).To(gomega.ContainSubstring("not-a-command"))
 		})
 
 		ginkgo.It("should run devsy up", func() {
