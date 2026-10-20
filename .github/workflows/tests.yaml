@@ -24,11 +24,22 @@ jobs:
         env:
           CGO_ENABLED: "1"
 
-      - name: install goreleaser
+      - name: disk usage before snapshot
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - name: build snapshot artifacts
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"
-          args: release --snapshot --clean
+          args: release --snapshot --clean --parallelism=1
+
+      - name: disk usage after snapshot
+        if: always()
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
 
       - name: provision login shell accounts
         run: |
