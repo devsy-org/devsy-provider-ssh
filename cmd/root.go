@@ -1,15 +1,19 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"os"
 	"os/exec"
+	"os/signal"
+	"syscall"
 
 	"github.com/devsy-org/devsy/pkg/log"
 	"github.com/spf13/cobra"
 	"golang.org/x/crypto/ssh"
 )
 
-// NewRootCmd returns a new root command
+// NewRootCmd returns a new root command.
 func NewRootCmd() *cobra.Command {
 	sshCmd := &cobra.Command{
 		Use:           "devsy-provider-ssh",
@@ -38,12 +42,14 @@ func Execute() {
 	rootCmd := BuildRoot()
 
 	// execute command
-	err := rootCmd.Execute()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	err := rootCmd.ExecuteContext(ctx)
+	stop()
 	if err != nil {
-		if exitErr, ok := err.(*ssh.ExitError); ok {
-			os.Exit(exitErr.ExitStatus())
+		if sshExit, ok := errors.AsType[*ssh.ExitError](err); ok {
+			os.Exit(sshExit.ExitStatus())
 		}
-		if exitErr, ok := err.(*exec.ExitError); ok {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			if len(exitErr.Stderr) > 0 {
 				log.Error(string(exitErr.Stderr))
 			}
@@ -54,7 +60,7 @@ func Execute() {
 	}
 }
 
-// BuildRoot creates a new root command from the
+// BuildRoot creates the SSH provider command tree.
 func BuildRoot() *cobra.Command {
 	rootCmd := NewRootCmd()
 

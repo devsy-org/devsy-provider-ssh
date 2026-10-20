@@ -3,19 +3,14 @@ package ssh
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
-	"net"
-	"os"
-	"os/exec"
 	"path"
-	"path/filepath"
+	"strconv"
 	"strings"
-	"time"
 
 	"github.com/devsy-org/devsy-provider-ssh/pkg/options"
-	"github.com/devsy-org/devsy/pkg/log"
-	"github.com/devsy-org/devsy/pkg/ssh"
 	"github.com/kballard/go-shellquote"
 )
 
@@ -38,17 +33,6 @@ func NewProvider() (*SSHProvider, error) {
 	return provider, nil
 }
 
-func returnSSHError(provider *SSHProvider, command string) error {
-	sshError := "Please make sure you have configured the correct SSH host\nand the following command can be executed on your system:\n"
-
-	sshcmd, err := getSSHCommand(provider)
-	if err != nil {
-		return err
-	}
-
-	return fmt.Errorf("%s ssh %s %s", sshError, strings.Join(sshcmd, " "), command)
-}
-
 func getSSHCommand(provider *SSHProvider) ([]string, error) {
 	result := []string{"-oStrictHostKeyChecking=no", "-oBatchMode=yes"}
 
@@ -59,7 +43,7 @@ func getSSHCommand(provider *SSHProvider) ([]string, error) {
 	if provider.Config.ExtraFlags != "" {
 		flags, err := shellquote.Split(provider.Config.ExtraFlags)
 		if err != nil {
-			return nil, fmt.Errorf("error managing EXTRA_ARGS, %v", err)
+			return nil, fmt.Errorf("parse EXTRA_FLAGS: %w", err)
 		}
 
 		result = append(result, flags...)
@@ -69,249 +53,133 @@ func getSSHCommand(provider *SSHProvider) ([]string, error) {
 	return result, nil
 }
 
-func execSSHCommand(provider *SSHProvider, command string, output io.Writer) error {
-	if provider.Config.UseBuiltinSSH {
-		// get ssh config for host
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
-		defer cancel()
-		sshConfig, err := exec.CommandContext(ctx, "ssh", "-G", provider.Config.Host).Output()
-		if err != nil {
-			return fmt.Errorf("read ssh config for host %s: %w", provider.Config.Host, err)
-		}
-		hostname, user, port, identityfile := parseConfig(string(sshConfig))
-		if hostname == "" || user == "" || port == "" {
-			return fmt.Errorf(
-				"resolve ssh config. Hostname='%s', User='%s', Port='%s'",
-				hostname,
-				user,
-				port,
-			)
-		}
-
-		// expand identityfile path
-		if strings.HasPrefix(identityfile, "~") {
-			identityfile = strings.Replace(identityfile, "~", "$userprofile", 1)
-			identityfile = os.ExpandEnv(identityfile)
-		}
-		abs, err := filepath.Abs(identityfile)
-		if err != nil {
-			return fmt.Errorf("absolute filepath: %w", err)
-		}
-		key, err := os.ReadFile(abs)
-		if err != nil {
-			return fmt.Errorf("read identifiyfile: %w", err)
-		}
-
-		if provider.Config.Port != "" {
-			port = provider.Config.Port
-		}
-		// create ssh session
-		addr := net.JoinHostPort(hostname, port)
-		client, err := ssh.NewSSHClient(user, addr, key)
-		if err != nil {
-			return fmt.Errorf("create ssh client: %w", err)
-		}
-		sess, err := client.NewSession()
-		if err != nil {
-			return fmt.Errorf("create ssh session: %w", err)
-		}
-		sess.Stdin = os.Stdin
-		sess.Stdout = output
-
-		return sess.Run(command)
+func Init(ctx context.Context, provider *SSHProvider, streams Streams) error {
+	if strings.ContainsRune(provider.Config.AgentPath, 0) ||
+		strings.ContainsRune(provider.Config.DockerPath, 0) {
+		return fmt.Errorf("remote executable or agent path contains NUL")
 	}
-
-	commandToRun, err := getSSHCommand(provider)
-	if err != nil {
-		return err
-	}
-
-	commandToRun = append(commandToRun, command)
-
-	var stderrBuf bytes.Buffer
-
-	cmd := exec.Command("ssh", commandToRun...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = output
-	cmd.Stderr = io.Writer(&stderrBuf)
-
-	err = cmd.Run()
-	if err != nil {
-		log.Error(stderrBuf.String())
-		return err
-	}
-
-	// A non-POSIX shell has been detected: falling back to copy and execute scripts
-	if strings.Contains(stderrBuf.String(), "fish: Unsupported") {
-		log.Warn(
-			"A non-POSIX shell has been detected: falling back to copy and execute scripts",
+	run := func(script string, output io.Writer) error {
+		return provider.execRemoteScript(
+			ctx,
+			script,
+			Streams{Stdin: streams.Stdin, Stdout: output, Stderr: streams.Stderr},
 		)
-
-		return copyAndExecSSHCommand(provider, command, output)
 	}
-
-	return err
-}
-
-func copyAndExecSSHCommand(provider *SSHProvider, command string, output io.Writer) error {
-	commandToRun, err := getSSHCommand(provider)
+	if err := checkRemotePlatform(run); err != nil {
+		return err
+	}
+	uid, err := remoteUID(run)
 	if err != nil {
 		return err
 	}
-
-	script, err := copyCommandToRemote(provider, command)
-	if err != nil {
-		return err
-	}
-
-	commandToRun = append(commandToRun, []string{
-		"/bin/sh", script, ";", "rm", "-f", script,
-	}...)
-
-	cmd := exec.Command("ssh", commandToRun...)
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = output
-	cmd.Stderr = os.Stderr
-
-	return cmd.Run()
-}
-
-func copyCommandToRemote(provider *SSHProvider, command string) (string, error) {
-	script, err := os.CreateTemp("", "devsy-command-*")
-	if err != nil {
-		return "", err
-	}
-	defer func() {
-		_ = script.Close()
-		_ = os.Remove(script.Name())
-	}()
-
-	commandToRun, err := getSCPCommand(provider, script.Name())
-	if err != nil {
-		return "", err
-	}
-
-	_, err = script.WriteString(command)
-	if err != nil {
-		return "", err
-	}
-
-	return script.Name(), exec.Command("scp", commandToRun...).Run()
-}
-
-func getSCPCommand(provider *SSHProvider, sourcefile string) ([]string, error) {
-	result := []string{"-oStrictHostKeyChecking=no", "-oBatchMode=yes"}
-
-	if provider.Config.Port != "22" {
-		result = append(result, []string{"-p", provider.Config.Port}...)
-	}
-
-	if provider.Config.ExtraFlags != "" {
-		flags, err := shellquote.Split(provider.Config.ExtraFlags)
-		if err != nil {
-			return nil, fmt.Errorf("error managing EXTRA_ARGS, %v", err)
-		}
-
-		result = append(result, flags...)
-	}
-
-	destfile := "/tmp/" + filepath.Base(sourcefile)
-
-	result = append(result, sourcefile)
-	result = append(result, provider.Config.Host+":"+destfile)
-	return result, nil
-}
-
-func Init(provider *SSHProvider) error {
-	out := new(bytes.Buffer)
-	// check that we can do outputs
-	err := execSSHCommand(provider, "echo Devsy Test", out)
-	if err != nil {
-		return returnSSHError(provider, "echo Devsy Test")
-	}
-	if out.String() != "Devsy Test\n" {
-		return fmt.Errorf("error: ssh output mismatch")
-	}
-
-	// We only support running on Linux ssh servers
-	out = new(bytes.Buffer)
-	err = execSSHCommand(provider, "uname", out)
-	if err != nil {
-		return returnSSHError(provider, "uname")
-	}
-	if out.String() != "Linux\n" {
-		fmt.Println(out.String())
-		return fmt.Errorf("error: SSH provider only works on Linux servers")
-	}
-
-	// If we're root, we won't have problems
-	out = new(bytes.Buffer)
-	err = execSSHCommand(provider, "id -ru", out)
-	if err != nil {
-		return returnSSHError(provider, "id -ru")
-	}
-	if out.String() == "0\n" {
+	if uid == 0 {
 		return nil
 	}
+	return provider.checkAccess(run)
+}
 
-	// check that we have access to AGENT_PATH
-	out = new(bytes.Buffer)
-	agentDir := path.Dir(provider.Config.AgentPath)
-	err1 := execSSHCommand(provider, "mkdir -p "+agentDir, out)
-	err2 := execSSHCommand(provider, "test -w "+agentDir, out)
-	if err1 != nil || err2 != nil {
-		err = execSSHCommand(provider, "sudo -nl", out)
-		if err != nil {
+func checkRemotePlatform(run func(string, io.Writer) error) error {
+	for _, check := range []struct{ script, expected, stage string }{
+		{"echo Devsy Test", "Devsy Test\n", "check remote /bin/sh and SSH connection"},
+		{"uname", "Linux\n", "check Linux operating system"},
+	} {
+		var out bytes.Buffer
+		if err := run(check.script, &out); err != nil {
+			return fmt.Errorf("%s: %w", check.stage, err)
+		}
+		if out.String() != check.expected {
 			return fmt.Errorf(
-				"%s is not writable, passwordless sudo or root user required",
-				agentDir,
+				"%s: unexpected SSH stdout; check login shell startup output",
+				check.stage,
 			)
 		}
 	}
-
-	// check that we have access to DOCKER_PATH
-	err = execSSHCommand(provider, provider.Config.DockerPath+" ps", out)
-	if err != nil {
-		err = execSSHCommand(provider, "sudo -nl", out)
-		if err != nil {
-			return fmt.Errorf(
-				"%s not found, passwordless sudo or root user required. If using another user please add to the docker group",
-				provider.Config.DockerPath,
-			)
-		}
-	}
-
 	return nil
 }
 
-func Command(provider *SSHProvider, command string) error {
-	return execSSHCommand(provider, command, os.Stdout)
+func remoteUID(run func(string, io.Writer) error) (uint64, error) {
+	var out bytes.Buffer
+	if err := run("id -ru", &out); err != nil {
+		return 0, fmt.Errorf("detect remote user: %w", err)
+	}
+	uid, err := strconv.ParseUint(strings.TrimSuffix(out.String(), "\n"), 10, 32)
+	if err != nil || !strings.HasSuffix(out.String(), "\n") {
+		return 0, fmt.Errorf(
+			"detect remote user: unexpected SSH stdout; check login shell startup output",
+		)
+	}
+	return uid, nil
 }
 
-func parseConfig(config string) (hostname string, user string, port string, identityfile string) {
-	for _, line := range strings.Split(config, "\n") {
-		fields := strings.Fields(line)
-		if len(fields) != 2 {
+func (provider *SSHProvider) checkAccess(run func(string, io.Writer) error) error {
+	agentDir, err := quotePOSIXArgument(path.Dir(provider.Config.AgentPath))
+	if err != nil {
+		return fmt.Errorf("agent path: %w", err)
+	}
+	dockerPath, err := quotePOSIXArgument(provider.Config.DockerPath)
+	if err != nil {
+		return fmt.Errorf("docker path: %w", err)
+	}
+	if err := checkAgentDirectory(run, agentDir); err != nil {
+		return err
+	}
+	if err := run(dockerPath+" ps", io.Discard); err != nil {
+		if sudoErr := run("sudo -nl", io.Discard); sudoErr != nil {
+			return fmt.Errorf(
+				"docker executable inaccessible; passwordless sudo or docker group required: %w",
+				err,
+			)
+		}
+	}
+	return nil
+}
+
+func checkAgentDirectory(run func(string, io.Writer) error, agentDir string) error {
+	mkdirErr := run("mkdir -p -- "+agentDir, io.Discard)
+	writableErr := run("test -w "+agentDir, io.Discard)
+	if mkdirErr == nil && writableErr == nil {
+		return nil
+	}
+	if err := run("sudo -nl", io.Discard); err != nil {
+		return fmt.Errorf(
+			"agent directory inaccessible; passwordless sudo or root required: %w",
+			errors.Join(mkdirErr, writableErr, err),
+		)
+	}
+	return nil
+}
+
+func Command(ctx context.Context, provider *SSHProvider, command string, streams Streams) error {
+	return provider.execRemoteScript(ctx, command, streams)
+}
+
+type resolvedConfig struct{ hostname, user, port, identityfile string }
+
+func parseConfig(config string) resolvedConfig {
+	var resolved resolvedConfig
+	for line := range strings.SplitSeq(config, "\n") {
+		key, value, found := strings.Cut(line, " ")
+		if !found {
 			continue
 		}
-		if fields[0] == "hostname" {
-			hostname = fields[1]
+		if key == "hostname" {
+			resolved.hostname = strings.TrimSpace(value)
 			continue
 		}
-		if fields[0] == "user" {
-			user = fields[1]
+		if key == "user" {
+			resolved.user = strings.TrimSpace(value)
 			continue
 		}
-		if fields[0] == "port" {
-			port = fields[1]
+		if key == "port" {
+			resolved.port = strings.TrimSpace(value)
 			continue
 		}
 		// just take the first one
-		if fields[0] == "identityfile" && identityfile == "" {
-			identityfile = fields[1]
+		if key == "identityfile" && resolved.identityfile == "" {
+			resolved.identityfile = strings.TrimSpace(value)
 			continue
 		}
 	}
 
-	return hostname, user, port, identityfile
+	return resolved
 }

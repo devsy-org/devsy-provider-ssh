@@ -9,23 +9,23 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// CommandCmd holds the cmd flags
+// CommandCmd holds the cmd flags.
 type CommandCmd struct{}
 
-// NewCommandCmd defines a command
+// NewCommandCmd defines a command.
 func NewCommandCmd() *cobra.Command {
 	cmd := &CommandCmd{}
 	commandCmd := &cobra.Command{
 		Use:   "command",
 		Short: "Command an instance",
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			sshProvider, err := ssh.NewProvider()
 			if err != nil {
 				return err
 			}
 
 			return cmd.Run(
-				context.Background(),
+				cobraCmd.Context(),
 				sshProvider,
 			)
 		},
@@ -34,7 +34,7 @@ func NewCommandCmd() *cobra.Command {
 	return commandCmd
 }
 
-// Run runs the command logic
+// Run runs the command logic.
 func (cmd *CommandCmd) Run(
 	ctx context.Context,
 	providerSSH *ssh.SSHProvider,
@@ -44,5 +44,10 @@ func (cmd *CommandCmd) Run(
 		return fmt.Errorf("command environment variable is missing")
 	}
 
-	return ssh.Command(providerSSH, command)
+	return ssh.Command(
+		ctx,
+		providerSSH,
+		command,
+		ssh.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+	)
 }

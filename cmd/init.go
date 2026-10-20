@@ -2,28 +2,29 @@ package cmd
 
 import (
 	"context"
+	"os"
 
 	"github.com/devsy-org/devsy-provider-ssh/pkg/ssh"
 	"github.com/spf13/cobra"
 )
 
-// InitCmd holds the cmd flags
+// InitCmd holds the cmd flags.
 type InitCmd struct{}
 
-// NewInitCmd defines a init
+// NewInitCmd defines a init.
 func NewInitCmd() *cobra.Command {
 	cmd := &InitCmd{}
 	initCmd := &cobra.Command{
 		Use:   "init",
 		Short: "Init account",
-		RunE: func(_ *cobra.Command, args []string) error {
+		RunE: func(cobraCmd *cobra.Command, args []string) error {
 			sshProvider, err := ssh.NewProvider()
 			if err != nil {
 				return err
 			}
 
 			return cmd.Run(
-				context.Background(),
+				cobraCmd.Context(),
 				sshProvider,
 			)
 		},
@@ -32,10 +33,14 @@ func NewInitCmd() *cobra.Command {
 	return initCmd
 }
 
-// Run runs the init logic
+// Run runs the init logic.
 func (cmd *InitCmd) Run(
 	ctx context.Context,
 	providerSSH *ssh.SSHProvider,
 ) error {
-	return ssh.Init(providerSSH)
+	return ssh.Init(
+		ctx,
+		providerSSH,
+		ssh.Streams{Stdin: os.Stdin, Stdout: os.Stdout, Stderr: os.Stderr},
+	)
 }

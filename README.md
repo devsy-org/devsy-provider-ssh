@@ -50,3 +50,17 @@ This provider has the following options:
 # Extra
 
 For more detail, see the [Devsy Documentation](https://devsy.sh/docs/managing-providers/what-are-providers).
+
+### Remote shell requirements
+
+The SSH server must run Linux with `/bin/sh` and the standard base tools used by
+Devsy (`uname`, `id`, `mkdir`, `test`, `cat`, `chmod`, and `mv`). Bash, Zsh, and Fish
+are supported as the SSH account login shell. Bootstrap scripts execute through
+`/bin/sh`; the login shell does not need to understand POSIX script syntax.
+Login startup files must leave stdout clean because it carries the bootstrap
+handshake and tunnel bytes. Send diagnostics to stderr.
+
+The SSH login shell is independent of the shell inside the workspace container.
+`DOCKER_PATH` selects one executable path, including paths containing spaces; it
+is not a command line with flags. The provider sends the bootstrap as a command
+argument and reserves stdin for protocol data. It does not require SCP.
