@@ -3,7 +3,7 @@ module github.com/devsy-org/devsy-provider-ssh
 go 1.26.10
 
 require (
-	github.com/devsy-org/devsy v1.23.2
+	github.com/devsy-org/devsy v1.24.0
 	github.com/goccy/go-yaml v1.19.2
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/onsi/ginkgo/v2 v2.33.1
@@ -122,7 +122,7 @@ require (
 	github.com/devsy-org/agentapi v1.0.1 // indirect
 	github.com/devsy-org/api v1.1.0 // indirect
 	github.com/devsy-org/apiserver v1.5.4 // indirect
-	github.com/devsy-org/devsy-runtime-sdk v1.5.2 // indirect
+	github.com/devsy-org/devsy-runtime-sdk v1.6.0 // indirect
 	github.com/devsy-org/ssh v1.2.9 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/docker/cli v29.8.0+incompatible // indirect
