@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.47](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.46...v1.1.47) (2026-10-21)
+
+
+### Bug Fixes
+
+* reclaim runner disk and verify release publication ([#157](https://github.com/devsy-org/devsy-provider-ssh/issues/157)) ([c959064](https://github.com/devsy-org/devsy-provider-ssh/commit/c959064eda4cd09600f1983c5f2ba52a4cfbd9ab))
+
 ## [1.1.46](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.45...v1.1.46) (2026-10-21)
 
 
