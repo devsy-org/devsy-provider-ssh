@@ -64,6 +64,7 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GORELEASER_CURRENT_TAG: ${{ env.TAG }}
 
       - name: generate provider.yaml
         run: go run ./hack/provider/main.go "$TAG" > ./dist/provider.yaml
