@@ -155,6 +155,13 @@ rejected the review invocation because it uploads uncommitted and untracked
 private source. That gate is BLOCKED pending explicit user authorization for the
 concrete diff. No workaround or indirect upload was attempted.
 
-CI and final-SHA Greptile/CodeRabbit reviews are pending draft PR publication and
-must not be reported as passed. No merge, tag, release, or customer reply is part
-of this change.
+[Provider draft PR #152](https://github.com/devsy-org/devsy-provider-ssh/pull/152)
+is published alongside [core draft PR #1627](https://github.com/devsy-org/devsy/pull/1627).
+The qualification results above describe their recorded source/artifact revisions,
+not every later follow-up. CI and Greptile passed on provider revision `b718c873`;
+its full CodeRabbit review identified a pre-session cancellation error-identity
+gap. The follow-up preserves context and original causes across configuration,
+dial, handshake, session opening and execution, including the lookup's own timeout.
+Fresh final-head CI and ordered Greptile/CodeRabbit coverage remain required after
+that source change. Consult the live PR head, check runs, and review reports for
+current gate evidence. No merge, tag, release, or customer reply is authorized.

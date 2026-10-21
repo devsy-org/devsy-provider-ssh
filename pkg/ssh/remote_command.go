@@ -64,9 +64,19 @@ func (provider *SSHProvider) execRemoteScript(
 	cmd := exec.CommandContext(ctx, "ssh", append(args, command)...)
 	cmd.Stdout, cmd.Stderr = streams.Stdout, streams.Stderr
 	if err := runExternal(cmd, streams.Stdin); err != nil {
-		return fmt.Errorf("execute remote /bin/sh script: %w", errors.Join(ctx.Err(), err))
+		return fmt.Errorf("execute remote /bin/sh script: %w", joinContextError(ctx, err))
 	}
 	return nil
+}
+
+func joinContextError(ctx context.Context, err error) error {
+	if err == nil {
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil && !errors.Is(err, ctxErr) {
+		return errors.Join(ctxErr, err)
+	}
+	return err
 }
 
 func runExternal(cmd *exec.Cmd, input io.Reader) error {
@@ -111,7 +121,7 @@ func (provider *SSHProvider) builtinConfig(
 	lookup.Stderr = stderr
 	config, err := lookup.Output()
 	if err != nil {
-		return nil, "", fmt.Errorf("read SSH config: %w", err)
+		return nil, "", fmt.Errorf("read SSH config: %w", joinContextError(lookupCtx, err))
 	}
 	resolved := parseConfig(string(config))
 	if resolved.hostname == "" || resolved.user == "" || resolved.port == "" ||
@@ -151,11 +161,23 @@ func (provider *SSHProvider) execBuiltin(
 	command string,
 	streams Streams,
 ) error {
+	return provider.execBuiltinWithDial(ctx, command, streams, (&net.Dialer{}).DialContext)
+}
+
+func (provider *SSHProvider) execBuiltinWithDial(
+	ctx context.Context,
+	command string,
+	streams Streams,
+	dial func(context.Context, string, string) (net.Conn, error),
+) (err error) {
+	defer func() {
+		err = joinContextError(ctx, err)
+	}()
 	config, addr, err := provider.builtinConfig(ctx, streams.Stderr)
 	if err != nil {
 		return err
 	}
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", addr)
+	conn, err := dial(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("dial SSH: %w", err)
 	}
@@ -175,9 +197,6 @@ func (provider *SSHProvider) execBuiltin(
 	defer func() { _ = session.Close() }()
 	session.Stdout, session.Stderr = streams.Stdout, streams.Stderr
 	if err := runSession(session, command, streams.Stdin); err != nil {
-		if ctx.Err() != nil {
-			return fmt.Errorf("execute remote /bin/sh script: %w", ctx.Err())
-		}
 		return fmt.Errorf("execute remote /bin/sh script: %w", err)
 	}
 	return nil
