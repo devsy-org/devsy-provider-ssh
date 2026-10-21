@@ -73,9 +73,19 @@ func setupSSHKeys() {
 }
 
 func setupDevsyCLI() {
+	if local := os.Getenv("DEVSY_E2E_BINARY"); local != "" {
+		// #nosec G304,G703 -- Test runner explicitly selects the local core binary.
+		data, err := os.ReadFile(local)
+		framework.ExpectNoError(err)
+		framework.ExpectNoError(os.MkdirAll("bin", 0o750))
+		// #nosec G306,G703 -- Local core binary must be executable.
+		framework.ExpectNoError(os.WriteFile("bin/devsy", data, 0o700))
+		return
+	}
+
 	client := &http.Client{Timeout: time.Second * 30}
 	resp, err := client.Get(
-		"https://github.com/devsy-org/devsy/releases/latest/download/devsy-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/download/v1.24.0/devsy-linux-amd64",
 	)
 	framework.ExpectNoError(err)
 	framework.ExpectEqual(resp.StatusCode, http.StatusOK)
@@ -241,12 +251,15 @@ echo line3`,
 				"PORT=22",
 				"USE_BUILTIN_SSH=false",
 			}...)
-			output, err := cmd.CombinedOutput()
+			var stdout, stderr bytes.Buffer
+			cmd.Stdout, cmd.Stderr = &stdout, &stderr
+			err := cmd.Run()
 			framework.ExpectError(err)
-			output = bytes.TrimSpace(output)
-			msg := string(output)
-			gomega.Expect(msg).To(gomega.ContainSubstring("not-a-command"))
-			gomega.Expect(msg).To(gomega.ContainSubstring("command not found"))
+			gomega.Expect(cmd.ProcessState).NotTo(gomega.BeNil())
+			gomega.Expect(cmd.ProcessState.ExitCode()).To(gomega.Equal(127))
+			gomega.Expect(stdout.Bytes()).To(gomega.BeEmpty())
+			gomega.Expect(stderr.Bytes()).NotTo(gomega.BeEmpty())
+			gomega.Expect(stderr.String()).To(gomega.ContainSubstring("not-a-command"))
 		})
 
 		ginkgo.It("should run devsy up", func() {

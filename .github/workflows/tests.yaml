@@ -10,23 +10,61 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
 
       - name: setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
+      - name: install login shells
+        run: sudo apt-get update && sudo apt-get install -y bash zsh fish openssh-server
+
       - name: unit tests
         run: go test -race -covermode=atomic . ./cmd/... ./hack/... ./pkg/...
         env:
           CGO_ENABLED: "1"
 
-      - name: install goreleaser
+      - name: disk usage before snapshot
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - name: build snapshot artifacts
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7
         with:
           version: "~> v2"
-          args: release --snapshot --clean
+          args: release --snapshot --clean --parallelism=1
+
+      - name: disk usage after snapshot
+        if: always()
+        run: |
+          df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
+          du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
+
+      - name: provision login shell accounts
+        run: |
+          sudo service ssh start
+          for shell in bash zsh fish; do
+            sudo useradd --create-home --shell "$(command -v "$shell")" "devsy-$shell"
+          done
 
       - name: integration tests
         working-directory: ./e2e
         run: go test -v -ginkgo.v -timeout 3600s --ginkgo.label-filter=integration
+        env:
+          DEVSY_E2E_SHELL_MATRIX: "true"
+
+  windows-stdin:
+    name: Windows redirected SSH stdin
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+      - name: test redirected pipe bytes and cancellation
+        run: go test ./pkg/ssh -run TestWindows -timeout 60s
