@@ -3,6 +3,12 @@ name: Release
 on:
   release:
     types: [created]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag to publish or repair
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -10,15 +16,45 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
+    concurrency:
+      group: release-${{ inputs.tag || github.event.release.tag_name }}
+      cancel-in-progress: false
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
+      - name: free disk space
+        id: cleanup
+        uses: jlumbroso/free-disk-space@ceedf095f4ec1a097402bc6bd80831f2e1a6fde6 # v2.0.0
+        background: true
+        with:
+          preinstalled-runtimes: false
+          docker-images: false
+          swap-storage: false
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - name: validate release tag
+        run: |
+          test "$(git describe --tags --exact-match)" = "$TAG"
+          gh release view "$TAG"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
+
+      - name: wait for disk cleanup
+        wait: cleanup
+
+      - name: disk usage before release
+        run: df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
 
       - name: run goreleaser
         id: goreleaser
@@ -30,10 +66,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: generate provider.yaml
-        run: go run ./hack/provider/main.go ${{ fromJSON(steps.goreleaser.outputs.metadata).tag }} > ./dist/provider.yaml
+        run: go run ./hack/provider/main.go "$TAG" > ./dist/provider.yaml
 
       - name: upload provider.yaml
         run: gh release upload "${TAG}" ./dist/provider.yaml --clobber
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          TAG: ${{ fromJSON(steps.goreleaser.outputs.metadata).tag }}
+
+      - name: verify published release assets
+        run: |
+          git show "$WORKFLOW_SHA:hack/verify-release.sh" > "$RUNNER_TEMP/verify-release.sh"
+          bash "$RUNNER_TEMP/verify-release.sh" "$TAG" ./dist
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+
+      - name: disk usage after release
+        if: always()
+        run: df -h /tmp "$RUNNER_TEMP" "$GITHUB_WORKSPACE"
