@@ -45,6 +45,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: use disk-backed Go temporary directory
+        run: echo "GOTMPDIR=$RUNNER_TEMP" >> "$GITHUB_ENV"
+
       - name: setup Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
@@ -76,8 +79,8 @@ jobs:
 
       - name: verify published release assets
         run: |
-          git show "$WORKFLOW_SHA:hack/verify-release.sh" > "$RUNNER_TEMP/verify-release.sh"
-          bash "$RUNNER_TEMP/verify-release.sh" "$TAG" ./dist
+          git show "$WORKFLOW_SHA:hack/verify-release/main.go" > "$RUNNER_TEMP/verify-release.go"
+          go run "$RUNNER_TEMP/verify-release.go" "$TAG" ./dist
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WORKFLOW_SHA: ${{ github.workflow_sha }}
