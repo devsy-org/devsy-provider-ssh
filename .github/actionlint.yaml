@@ -1,0 +1,6 @@
+# actionlint v1.7.12 predates GitHub background/wait steps.
+paths:
+  .github/workflows/release.yaml:
+    ignore:
+      - '^unexpected key "background" for step to execute action\.'
+      - '^step must run script with "run" section or run action with "uses" section$'
