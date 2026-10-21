@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.45](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.44...v1.1.45) (2026-10-21)
+
+
+### Bug Fixes
+
+* execute SSH bootstrap through a shell-safe POSIX launcher ([#152](https://github.com/devsy-org/devsy-provider-ssh/issues/152)) ([d31fed1](https://github.com/devsy-org/devsy-provider-ssh/commit/d31fed1b2695861b76e922c530ad8a2436f5acb9))
+
 ## [1.1.44](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.43...v1.1.44) (2026-10-19)
 
 
