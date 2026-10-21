@@ -25,7 +25,7 @@ func TestWindowsRedirectedStdin(t *testing.T) {
 		requireNoError(t, err)
 		_, err = os.Stdout.Write(data)
 		requireNoError(t, err)
-		timer := time.AfterFunc(100*time.Millisecond, func() { reader.Cancel() })
+		timer := time.AfterFunc(100*time.Millisecond, func() { _ = reader.Close() })
 		defer timer.Stop()
 		_, err = reader.Read(make([]byte, 1))
 		if err == nil {

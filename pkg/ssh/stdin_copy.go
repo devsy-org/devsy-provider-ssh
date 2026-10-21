@@ -6,12 +6,10 @@ import (
 	"net"
 	"os"
 	"sync/atomic"
-
-	"github.com/muesli/cancelreader"
 )
 
 type stdinCopy struct {
-	reader         cancelreader.CancelReader
+	reader         io.ReadCloser
 	stopping       atomic.Bool
 	done           chan struct{}
 	sourceErr      error
@@ -20,7 +18,7 @@ type stdinCopy struct {
 	destinationErr error
 }
 
-func startStdinCopy(reader cancelreader.CancelReader, writer io.WriteCloser) *stdinCopy {
+func startStdinCopy(reader io.ReadCloser, writer io.WriteCloser) *stdinCopy {
 	copy := &stdinCopy{reader: reader, done: make(chan struct{})}
 	go func() {
 		defer close(copy.done)
@@ -46,7 +44,7 @@ func (input trackedStdin) Read(data []byte) (int, error) {
 
 func (copy *stdinCopy) finish() error {
 	copy.stopping.Store(true)
-	copy.reader.Cancel()
+	_ = copy.reader.Close()
 	<-copy.done
 	// Source errors remain meaningful when a successful remote command closes its input.
 	if copy.sourceErr != nil && (!copy.sourceStopped || !isStdinShutdown(copy.sourceErr)) {
@@ -62,7 +60,7 @@ func (copy *stdinCopy) finish() error {
 }
 
 func isStdinShutdown(err error) bool {
-	return errors.Is(err, cancelreader.ErrCanceled) || errors.Is(err, io.ErrClosedPipe) ||
+	return errors.Is(err, io.ErrClosedPipe) ||
 		errors.Is(err, os.ErrClosed) || errors.Is(err, net.ErrClosed) || errors.Is(err, io.EOF)
 }
 

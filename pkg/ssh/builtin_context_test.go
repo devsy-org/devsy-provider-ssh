@@ -1,6 +1,7 @@
 package ssh
 
 import (
+	"bufio"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -127,8 +128,12 @@ func pendingBuiltinPhase(t *testing.T, session bool) (*SSHProvider, <-chan struc
 		}
 		defer func() { _ = conn.Close() }()
 		if !session {
+			reader := bufio.NewReader(conn)
+			if _, err := reader.ReadString('\n'); err != nil {
+				return
+			}
 			close(ready)
-			_, _ = io.Copy(io.Discard, conn)
+			_, _ = io.Copy(io.Discard, reader)
 			return
 		}
 		server, channels, requests, err := cryptossh.NewServerConn(conn, config)

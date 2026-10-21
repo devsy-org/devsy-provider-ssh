@@ -15,13 +15,13 @@ import (
 	"time"
 
 	devsyssh "github.com/devsy-org/devsy/pkg/ssh"
-	"github.com/muesli/cancelreader"
 	cryptossh "golang.org/x/crypto/ssh"
 )
 
 // Streams keeps protocol bytes separate from diagnostics. Non-file Stdin closers
 // transfer ownership to the transport and must unblock concurrent Read on Close.
 // Other non-file readers must be finite buffers; caller-owned files remain open.
+// The transport must be the only reader of supplied stdin until it returns.
 type Streams struct {
 	Stdin  io.Reader
 	Stdout io.Writer
@@ -224,12 +224,12 @@ func runSession(session *cryptossh.Session, command string, input io.Reader) err
 	return errors.Join(err, copy.finish())
 }
 
-func cancellableInput(input io.Reader) (cancelreader.CancelReader, error) {
+func cancellableInput(input io.Reader) (io.ReadCloser, error) {
 	switch reader := input.(type) {
 	case *os.File:
 		return cancellableFile(reader)
 	case *bytes.Buffer, *bytes.Reader, *strings.Reader:
-		return cancelreader.NewReader(input)
+		return io.NopCloser(input), nil
 	case io.ReadCloser:
 		return &closingInput{ReadCloser: reader}, nil
 	default:
@@ -244,8 +244,6 @@ type closingInput struct {
 	once     sync.Once
 	closeErr error
 }
-
-func (input *closingInput) Cancel() bool { return input.Close() == nil }
 
 func (input *closingInput) Close() error {
 	input.once.Do(func() { input.closeErr = input.ReadCloser.Close() })
