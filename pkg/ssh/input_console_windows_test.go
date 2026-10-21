@@ -3,6 +3,7 @@ package ssh
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"syscall"
@@ -11,6 +12,11 @@ import (
 
 	"golang.org/x/sys/windows"
 )
+
+type consoleReadResult struct {
+	count int
+	err   error
+}
 
 func TestWindowsConsoleCancellation(t *testing.T) {
 	if os.Getenv("DEVSY_TEST_PRIVATE_CONSOLE") == "true" {
@@ -59,8 +65,11 @@ func cancelConsoleRead(t *testing.T, file *os.File) {
 	reader, err := newConsoleInput(file)
 	requireNoError(t, err)
 	input := reader.(*consoleInput)
-	result := make(chan error, 1)
-	go func() { _, err := input.Read(make([]byte, 8)); result <- err }()
+	result := make(chan consoleReadResult, 1)
+	go func() {
+		n, err := input.Read(make([]byte, 8))
+		result <- consoleReadResult{count: n, err: err}
+	}()
 	deadline := time.Now().Add(3 * time.Second)
 	for {
 		input.state.Lock()
@@ -74,14 +83,41 @@ func cancelConsoleRead(t *testing.T, file *os.File) {
 		}
 		time.Sleep(time.Millisecond)
 	}
-	requireNoError(t, input.Close())
 	select {
-	case err := <-result:
-		if !errors.Is(err, os.ErrClosed) {
-			t.Fatalf("console cancellation: %v", err)
-		}
+	case completed := <-result:
+		t.Fatalf(
+			"console read completed before cancellation: %d, %v",
+			completed.count,
+			completed.err,
+		)
+	default:
+	}
+	closeConsoleInput(t, input)
+	select {
+	case completed := <-result:
+		assertConsoleReadCanceled(t, completed)
 	case <-time.After(3 * time.Second):
 		t.Fatal("console read did not join")
 	}
 	requireNoError(t, input.Close())
+}
+
+func closeConsoleInput(t *testing.T, input *consoleInput) {
+	t.Helper()
+	done := make(chan error, 1)
+	go func() { done <- input.Close() }()
+	select {
+	case err := <-done:
+		requireNoError(t, err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("console cancellation did not close and join its reader")
+	}
+}
+
+func assertConsoleReadCanceled(t *testing.T, result consoleReadResult) {
+	t.Helper()
+	if result.count != 0 ||
+		(!errors.Is(result.err, os.ErrClosed) && !errors.Is(result.err, io.EOF)) {
+		t.Fatalf("console cancellation: bytes=%d, error=%v", result.count, result.err)
+	}
 }
