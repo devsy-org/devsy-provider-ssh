@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy/e2e/framework"
+	"github.com/kballard/go-shellquote"
 	"github.com/onsi/ginkgo/v2"
 	"github.com/onsi/ginkgo/v2/types"
 	"github.com/onsi/gomega"
@@ -23,6 +24,7 @@ import (
 const (
 	workspaceFixture   = "tests/integration/testdata/login-shell-workspace"
 	remoteAgentDirRoot = "/tmp/devsy-e2e-"
+	literalAgentSuffix = " space'\\$-\u03bb"
 
 	upTimeout     = 15 * time.Minute
 	cliTimeout    = 3 * time.Minute
@@ -51,16 +53,17 @@ func prepareQualification() {
 // shellCell is one login shell and SSH implementation pair with its own Devsy home,
 // provider, workspace, and remote agent directory.
 type shellCell struct {
-	pair       qualifiedPair
-	shell      string
-	user       string
-	builtin    bool
-	id         string
-	devsyHome  string
-	agentDir   string
-	agentPath  string
-	loginShell string
-	report     *cellReport
+	pair         qualifiedPair
+	shell        string
+	user         string
+	builtin      bool
+	id           string
+	devsyHome    string
+	agentDir     string
+	agentPath    string
+	rootAgentDir bool
+	loginShell   string
+	report       *cellReport
 }
 
 func newShellCell(shell string, builtin bool) *shellCell {
@@ -72,7 +75,7 @@ func newShellCell(shell string, builtin bool) *shellCell {
 		transport = "builtin"
 	}
 	id := fmt.Sprintf("e2e-1621-%s-%s-%s", shell, transport, hex.EncodeToString(suffix))
-	agentDir := remoteAgentDirRoot + id
+	agentDir := remoteAgentDirRoot + id + literalAgentSuffix
 	return &shellCell{
 		shell:     shell,
 		user:      "devsy-" + shell,
@@ -113,7 +116,7 @@ func (c *shellCell) remote(script string) (string, error) {
 		"HOST="+c.user+"@127.0.0.1",
 		"PORT=22",
 		"USE_BUILTIN_SSH=false",
-		"EXTRA_FLAGS=-i "+filepath.Join(home, ".ssh", "id_rsa"),
+		"EXTRA_FLAGS="+shellquote.Join("-i", filepath.Join(home, ".ssh", "id_rsa")),
 		"AGENT_PATH="+c.agentPath,
 		"DOCKER_PATH=docker",
 		"COMMAND="+script,
@@ -163,30 +166,40 @@ func hostBootstrapOutput(output string) string {
 }
 
 func (c *shellCell) agentVersion() string {
-	return c.mustRemote(c.agentPath + " --version")
+	return c.mustRemote(shellquote.Join(c.agentPath, "--version"))
 }
 
 func (c *shellCell) agentSHA256() string {
-	return strings.Fields(c.mustRemote("sha256sum -- " + c.agentPath))[0]
+	return strings.Fields(c.mustRemote(shellquote.Join("sha256sum", "--", c.agentPath)))[0]
 }
 
 // agentInode changes on every atomic replacement and survives a reused agent.
 func (c *shellCell) agentInode() string {
-	return c.mustRemote("stat -c %i -- " + c.agentPath)
+	return c.mustRemote(shellquote.Join("stat", "-c", "%i", "--", c.agentPath))
 }
 
 func (c *shellCell) expectCandidateAgentInstalled() {
 	gomega.Expect(c.agentVersion()).To(gomega.Equal(c.pair.CoreVersion))
 	gomega.Expect(c.agentSHA256()).To(gomega.Equal(c.pair.CoreBinarySHA256))
-	gomega.Expect(c.mustRemote("ls -A -- "+c.agentDir)).To(
+	gomega.Expect(c.mustRemote(shellquote.Join("ls", "-A", "--", c.agentDir))).To(
 		gomega.Equal(agentBinaryName), "installer must leave no temporary files",
 	)
 }
 
 func (c *shellCell) installStaleAgent() {
+	// A prior agent process can still hold the installed executable open.
+	staged := shellquote.Join(c.agentPath + ".stale")
 	c.mustRemote(fmt.Sprintf(
-		"mkdir -p -- %s && printf '#!/bin/sh\\necho %s\\n' > %s && chmod 0755 -- %s",
-		c.agentDir, staleAgentVersion, c.agentPath, c.agentPath,
+		"mkdir -p -- %s && printf '#!/bin/sh\\necho %s\\n' > %s "+
+			"&& chmod 0755 -- %s && mv -f -- %s %s",
+		shellquote.Join(
+			c.agentDir,
+		),
+		staleAgentVersion,
+		staged,
+		staged,
+		staged,
+		shellquote.Join(c.agentPath),
 	))
 	gomega.Expect(c.agentVersion()).To(gomega.Equal(staleAgentVersion))
 }
@@ -233,12 +246,15 @@ func (c *shellCell) cleanup() {
 
 func (c *shellCell) removeAgentDirectory() error {
 	// Only the per-cell directory is removed, never a shared agent path.
-	if strings.HasPrefix(c.agentDir, remoteAgentDirRoot) &&
-		len(c.agentDir) > len(remoteAgentDirRoot) {
-		_, err := c.remote("rm -rf -- " + c.agentDir)
-		return err
+	if !strings.HasPrefix(c.agentDir, remoteAgentDirRoot) ||
+		len(c.agentDir) == len(remoteAgentDirRoot) {
+		return nil
 	}
-	return nil
+	if c.rootAgentDir {
+		return runFixtureSudo("-n", "rm", "-rf", "--", c.agentDir)
+	}
+	_, err := c.remote(shellquote.Join("rm", "-rf", "--", c.agentDir))
+	return err
 }
 
 var _ = ginkgo.Describe(
@@ -288,7 +304,10 @@ func (c *shellCell) setup() {
 		AgentDir:    c.agentDir,
 		AgentSHA256: map[string]string{},
 	}
-	registerCellReport(c.report)
+	if !c.rootAgentDir {
+		registerCellReport(c.report)
+	}
+	ginkgo.DeferCleanup(c.cleanup)
 
 	installLoginAccountKey(c.user)
 	c.requireDockerAccess()
@@ -299,7 +318,6 @@ func (c *shellCell) setup() {
 	var err error
 	c.devsyHome, err = os.MkdirTemp("", "devsy-e2e-home-")
 	framework.ExpectNoError(err)
-	ginkgo.DeferCleanup(c.cleanup)
 
 	c.mustDevsy(
 		cliTimeout, nil,
@@ -307,11 +325,11 @@ func (c *shellCell) setup() {
 		"-o", "HOST="+c.user+"@127.0.0.1",
 		"-o", "USE_BUILTIN_SSH="+strconv.FormatBool(c.builtin),
 		"-o", "AGENT_PATH="+c.agentPath,
-		"-o", "EXTRA_FLAGS=-i "+sshPrivateKeyPath(),
+		"-o", "EXTRA_FLAGS="+shellquote.Join("-i", sshPrivateKeyPath()),
 		"-o", "INJECT_GIT_CREDENTIALS=false",
 		"-o", "INJECT_DOCKER_CREDENTIALS=false",
 	)
-	output, err := c.remote("test ! -e " + c.agentPath)
+	output, err := c.remote(shellquote.Join("test", "!", "-e", c.agentPath))
 	framework.ExpectNoError(err, "agent binary must start absent after provider init")
 	gomega.Expect(output).To(gomega.BeEmpty())
 }
@@ -360,7 +378,7 @@ func (c *shellCell) expectStaleAgentReplacement() {
 }
 
 func (c *shellCell) expectStdinTransfer() {
-	c.mustRemote("rm -rf -- " + c.agentDir)
+	c.mustRemote(shellquote.Join("rm", "-rf", "--", c.agentDir))
 	stdinMode := []string{envAgentPreferDownload + "=false"}
 	output := c.up(stdinMode...)
 	hostOutput := hostBootstrapOutput(output)

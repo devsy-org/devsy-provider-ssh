@@ -241,6 +241,16 @@ jobs:
             sudo useradd --create-home --shell "$(command -v "$shell")" "devsy-$shell"
             sudo usermod --append --groups docker "devsy-$shell"
           done
+          sudo useradd --create-home --shell "$(command -v bash)" --groups docker devsy-sudo
+          policy=/etc/sudoers.d/devsy-e2e-qualification
+          sudo test ! -e "$policy"
+          rule="$(mktemp)"
+          trap 'rm -f "$rule"' EXIT
+          printf '%s\n' 'devsy-sudo ALL=(root) NOPASSWD: SETENV: /bin/sh -c * devsy-install *' > "$rule"
+          sudo visudo -cf "$rule"
+          echo "DEVSY_SUDO_FIXTURE_POLICY=$policy" >> "$GITHUB_ENV"
+          sudo install -m 0440 -o root -g root "$rule" "$policy"
+          sudo visudo -cf "$policy"
 
       - name: qualify login shells with the explicit pair
         working-directory: ./e2e
@@ -252,6 +262,10 @@ jobs:
           DEVSY_E2E_SHELL_MATRIX: "true"
           DEVSY_E2E_REPORT: ${{ runner.temp }}/qualification/qualification-report.json
 
+      - name: remove owned sudo fixture policy
+        if: always() && env.DEVSY_SUDO_FIXTURE_POLICY != ''
+        run: sudo rm -f -- "$DEVSY_SUDO_FIXTURE_POLICY"
+
       - name: require a complete, passing report
         run: |
           jq -e --arg sha "$CORE_SHA256" '
@@ -262,8 +276,20 @@ jobs:
               .cleanup == "ok"
               and (.scenarios | length == 5)
               and all(.scenarios[]; .outcome == "passed")
+              and (.agentDir | contains(" ") and contains("\u0027")
+                and contains("\\") and contains("$") and contains("\u03bb"))
               and .agentSha256.download == $sha
               and .agentSha256.stdin == $sha)
+            and .privilege.user == "devsy-sudo"
+            and .privilege.userUid > 0
+            and .privilege.directoryState == "0:755"
+            and .privilege.writeDenied == true
+            and .privilege.agentUid == 0
+            and .privilege.agentVersion == .pair.coreVersion
+            and .privilege.agentSha256 == $sha
+            and .privilege.liveCommand == true
+            and .privilege.outcome == "passed"
+            and .privilege.cleanup == "ok"
           ' "$QUALIFICATION_DIR/qualification-report.json"
 
       - name: upload qualification report

@@ -31,10 +31,21 @@ The jobs run `release-qualification || provider-command` and upload
 `release-qualification-<tag>-cli` and `release-qualification-<tag>-desktop` reports.
 The report identifies the exact core/provider pair and harness commit, all six
 shell/transport cells, five agent scenarios per cell, binary hashes, and cleanup.
-A skipped or incomplete matrix cannot pass the workflow's report check.
+All six cells use an agent path containing a space, apostrophe, backslash, dollar
+sign, and Unicode character; every remote helper quotes the path literally.
+One additional focused scenario uses the dedicated non-root `devsy-sudo` account
+and a root-owned `0755` agent directory. It proves that an ordinary write is
+denied, a real sudo installation produces a root-owned candidate agent with the
+expected version/checksum, and workspace SSH still executes a live command.
+A skipped or incomplete matrix or privilege scenario cannot pass the report gate.
 
 To run by hand, use a disposable Linux amd64 host with local sshd, Docker, and
-provisioned `devsy-bash`, `devsy-zsh`, and `devsy-fish` accounts in the `docker` group.
+provisioned `devsy-bash`, `devsy-zsh`, `devsy-fish`, and `devsy-sudo` accounts in the
+`docker` group. Use the workflow's provisioning on that owned host: only
+`devsy-sudo` receives the validated, temporary sudoers rule for
+`/bin/sh -c * devsy-install *`, with `NOPASSWD` and `SETENV` for the installer's
+explicit dispatch. Remove `/etc/sudoers.d/devsy-e2e-qualification` after the run,
+including failure paths, as the workflow's `always()` cleanup does.
 Run from `e2e/`, after placing the released provider binary at
 `dist/build_linux_amd64_v1/devsy-provider-ssh-linux-amd64` and its release checksums
 at `dist/checksums.txt` relative to the repository root. Unset `DEVSY_AGENT_URL`,

@@ -68,9 +68,25 @@ type cellReport struct {
 	CleanupStatus string            `json:"cleanup"`
 }
 
+type privilegeReport struct {
+	User           string `json:"user"`
+	UserUID        uint64 `json:"userUid"`
+	AgentDir       string `json:"agentDir"`
+	DirectoryState string `json:"directoryState"`
+	WriteDenied    bool   `json:"writeDenied"`
+	WriteError     string `json:"writeError"`
+	AgentUID       uint64 `json:"agentUid"`
+	AgentVersion   string `json:"agentVersion"`
+	AgentSHA256    string `json:"agentSha256"`
+	LiveCommand    bool   `json:"liveCommand"`
+	Outcome        string `json:"outcome"`
+	CleanupStatus  string `json:"cleanup"`
+}
+
 type qualificationReport struct {
-	Pair  qualifiedPair `json:"pair"`
-	Cells []*cellReport `json:"cells"`
+	Pair      qualifiedPair    `json:"pair"`
+	Cells     []*cellReport    `json:"cells"`
+	Privilege *privilegeReport `json:"privilege"`
 }
 
 var (
@@ -182,10 +198,16 @@ func registerCellReport(report *cellReport) {
 	currentReport.Cells = append(currentReport.Cells, report)
 }
 
+func registerPrivilegeReport(report *privilegeReport) {
+	qualificationMu.Lock()
+	defer qualificationMu.Unlock()
+	currentReport.Privilege = report
+}
+
 var _ = ginkgo.ReportAfterSuite("release qualification report", func(ginkgo.Report) {
 	qualificationMu.Lock()
 	defer qualificationMu.Unlock()
-	if len(currentReport.Cells) == 0 {
+	if len(currentReport.Cells) == 0 && currentReport.Privilege == nil {
 		return
 	}
 	path := os.Getenv(envReportPath)
