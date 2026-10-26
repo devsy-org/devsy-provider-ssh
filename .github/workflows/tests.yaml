@@ -3,10 +3,22 @@ name: Tests
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      core_tag:
+        description: >-
+          Core release tag to qualify with this provider checkout (for example
+          v1.25.0-beta.3). Runs the release-qualification job.
+        required: false
+        type: string
+      provider_tag:
+        description: Published SSH provider release to qualify
+        required: true
+        default: v1.1.47
+        type: string
 
 jobs:
   test:
-    name: Run Integration Tests
+    name: Integration tests (compatibility core v1.24.0, not release qualification)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -68,3 +80,199 @@ jobs:
           go-version-file: go.mod
       - name: test redirected pipe bytes and cancellation
         run: go test ./pkg/ssh -run TestWindows -timeout 60s
+
+  release-qualification:
+    name: Release qualification (${{ matrix.core_artifact }}, explicit pair)
+    if: github.event_name == 'workflow_dispatch' && inputs.core_tag != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        core_artifact: [cli, desktop]
+    permissions:
+      contents: read
+    env:
+      CORE_TAG: ${{ inputs.core_tag }}
+      CORE_REPO: devsy-org/devsy
+      PROVIDER_TAG: ${{ inputs.provider_tag }}
+      CORE_ARTIFACT: ${{ matrix.core_artifact }}
+      # Merge commits that must be ancestors of the tested pair (issue #1621).
+      CORE_FIX_SHA: e22be00149ace87d512de0ec953541e3f7642c69
+      PROVIDER_FIX_SHA: d31fed1b2695861b76e922c530ad8a2436f5acb9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: choose the qualification artifact directory
+        run: echo "QUALIFICATION_DIR=$RUNNER_TEMP/qualification" >> "$GITHUB_ENV"
+
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: resolve and verify the candidate core
+        run: |
+          set -euo pipefail
+          if ! [[ "$CORE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::core_tag must look like v1.2.3 or v1.2.3-beta.1"
+            exit 1
+          fi
+          mkdir -p "$QUALIFICATION_DIR/core"
+
+          core_sha="$(gh api "repos/$CORE_REPO/commits/$CORE_TAG" --jq .sha)"
+          core_status="$(gh api "repos/$CORE_REPO/compare/$CORE_FIX_SHA...$core_sha" --jq .status)"
+          case "$core_status" in
+            ahead | identical) ;;
+            *)
+              echo "::error::core $CORE_TAG ($core_sha) does not contain $CORE_FIX_SHA (compare status: $core_status)"
+              exit 1
+              ;;
+          esac
+          provider_sha="$(git rev-parse --verify "refs/tags/$PROVIDER_TAG^{commit}")"
+          git merge-base --is-ancestor "$PROVIDER_FIX_SHA" "$provider_sha" || {
+            echo "::error::provider $PROVIDER_TAG does not contain $PROVIDER_FIX_SHA"
+            exit 1
+          }
+
+          case "$CORE_ARTIFACT" in
+            cli) asset=devsy-linux-amd64 ;;
+            desktop) asset=Devsy_linux_amd64.deb ;;
+            *) echo "::error::unknown core artifact $CORE_ARTIFACT"; exit 1 ;;
+          esac
+          gh release download "$CORE_TAG" --repo "$CORE_REPO" \
+            --pattern "$asset" --dir "$QUALIFICATION_DIR/core" --clobber
+          artifact="$QUALIFICATION_DIR/core/$asset"
+          artifact_sha256="$(sha256sum "$artifact" | cut -d' ' -f1)"
+          published_digest="$(gh api "repos/$CORE_REPO/releases/tags/$CORE_TAG" \
+            --jq ".assets[] | select(.name == \"$asset\") | .digest")"
+          if [ "$published_digest" != "sha256:$artifact_sha256" ]; then
+            echo "::error::downloaded $asset sha256:$artifact_sha256 differs from the published digest '$published_digest'"
+            exit 1
+          fi
+          core_binary="$artifact"
+          if [ "$CORE_ARTIFACT" = desktop ]; then
+            dpkg-deb --extract "$artifact" "$QUALIFICATION_DIR/core/desktop"
+            core_binary="$QUALIFICATION_DIR/core/desktop/opt/Devsy/resources/bin/devsy"
+          fi
+          test -f "$core_binary"
+          chmod 0755 "$core_binary"
+          core_sha256="$(sha256sum "$core_binary" | cut -d' ' -f1)"
+          core_version="$("$core_binary" --version)"
+          if [ "$core_version" != "$CORE_TAG" ]; then
+            echo "::error::core binary reports '$core_version', expected '$CORE_TAG'"
+            exit 1
+          fi
+
+          {
+            echo "DEVSY_E2E_BINARY=$core_binary"
+            echo "DEVSY_E2E_CORE_TAG=$CORE_TAG"
+            echo "DEVSY_E2E_CORE_SHA=$core_sha"
+            echo "DEVSY_E2E_CORE_VERSION=$core_version"
+            echo "DEVSY_E2E_PROVIDER_TAG=$PROVIDER_TAG"
+            echo "DEVSY_E2E_PROVIDER_SHA=$provider_sha"
+            echo "CORE_SHA256=$core_sha256"
+          } >> "$GITHUB_ENV"
+          {
+            echo "core tag: $CORE_TAG"
+            echo "core sha: $core_sha"
+            echo "core artifact: $asset"
+            echo "core artifact source: https://github.com/$CORE_REPO/releases/download/$CORE_TAG/$asset"
+            echo "tested binary platform: linux/amd64"
+            echo "core artifact sha256: $artifact_sha256 (matches published release digest)"
+            echo "tested core binary sha256: $core_sha256"
+            echo "core version: $core_version"
+            echo "core fix $CORE_FIX_SHA is an ancestor (compare status: $core_status)"
+            echo "provider tag: $PROVIDER_TAG"
+            echo "provider sha: $provider_sha"
+            echo "qualification harness sha: $(git rev-parse HEAD)"
+            echo "provider fix $PROVIDER_FIX_SHA is an ancestor"
+          } | tee "$QUALIFICATION_DIR/pair-verification.txt" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: install login shells
+        run: sudo apt-get update && sudo apt-get install -y bash zsh fish openssh-server
+
+      - name: download and verify the released provider
+        run: |
+          set -euo pipefail
+          mkdir -p dist/build_linux_amd64_v1
+          asset=devsy-provider-ssh-linux-amd64
+          gh release download "$PROVIDER_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern "$asset" --dir dist/build_linux_amd64_v1 --clobber
+          gh release download "$PROVIDER_TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern checksums.txt --dir dist --clobber
+          binary="dist/build_linux_amd64_v1/$asset"
+          digest="$(sha256sum "$binary" | cut -d' ' -f1)"
+          published_digest="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$PROVIDER_TAG" \
+            --jq ".assets[] | select(.name == \"$asset\") | .digest")"
+          if [ "$published_digest" != "sha256:$digest" ]; then
+            echo "::error::downloaded provider sha256:$digest differs from '$published_digest'"
+            exit 1
+          fi
+          chmod 0755 "$binary"
+          echo "provider binary sha256: $digest (matches published release digest)" \
+            | tee -a "$QUALIFICATION_DIR/pair-verification.txt" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: require the explicit candidate before SSH setup
+        working-directory: ./e2e
+        run: |
+          status=0
+          env -u DEVSY_E2E_BINARY go test -v -timeout 300s --ginkgo.v \
+            --ginkgo.label-filter=release-qualification \
+            --ginkgo.focus='bash builtin=false installs a cold agent by remote download' \
+            > "$QUALIFICATION_DIR/missing-binary-guard.log" 2>&1 || status=$?
+          cat "$QUALIFICATION_DIR/missing-binary-guard.log"
+          test "$status" -eq 1
+          grep -F 'DEVSY_E2E_BINARY is required' "$QUALIFICATION_DIR/missing-binary-guard.log"
+        env:
+          DEVSY_E2E_RELEASE_QUALIFICATION: "true"
+
+      - name: provision login shell accounts
+        run: |
+          sudo service ssh start
+          for shell in bash zsh fish; do
+            sudo useradd --create-home --shell "$(command -v "$shell")" "devsy-$shell"
+            sudo usermod --append --groups docker "devsy-$shell"
+          done
+
+      - name: qualify login shells with the explicit pair
+        working-directory: ./e2e
+        run: >-
+          go test -v -ginkgo.v -timeout 14400s
+          --ginkgo.label-filter='release-qualification || provider-command'
+        env:
+          DEVSY_E2E_RELEASE_QUALIFICATION: "true"
+          DEVSY_E2E_SHELL_MATRIX: "true"
+          DEVSY_E2E_REPORT: ${{ runner.temp }}/qualification/qualification-report.json
+
+      - name: require a complete, passing report
+        run: |
+          jq -e --arg sha "$CORE_SHA256" '
+            .pair.coreBinarySha256 == $sha
+            and (.cells | length == 6)
+            and ([.cells[] | [.shell, .builtinSsh]] | unique | length == 6)
+            and all(.cells[];
+              .cleanup == "ok"
+              and (.scenarios | length == 5)
+              and all(.scenarios[]; .outcome == "passed")
+              and .agentSha256.download == $sha
+              and .agentSha256.stdin == $sha)
+          ' "$QUALIFICATION_DIR/qualification-report.json"
+
+      - name: upload qualification report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-qualification-${{ inputs.core_tag }}-${{ matrix.core_artifact }}
+          path: |
+            ${{ runner.temp }}/qualification/pair-verification.txt
+            ${{ runner.temp }}/qualification/qualification-report.json
+            ${{ runner.temp }}/qualification/missing-binary-guard.log
+          if-no-files-found: error
