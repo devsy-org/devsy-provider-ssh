@@ -72,8 +72,16 @@ func setupSSHKeys() {
 	}
 }
 
+// compatCoreVersion is the core release the lifecycle suite downloads when no
+// binary override is supplied. It checks backward compatibility only.
+const compatCoreVersion = "v1.24.0"
+
 func setupDevsyCLI() {
-	if local := os.Getenv("DEVSY_E2E_BINARY"); local != "" {
+	if qualificationEnabled() {
+		requireQualifiedPair()
+	}
+
+	if local := os.Getenv(envCoreBinary); local != "" {
 		// #nosec G304,G703 -- Test runner explicitly selects the local core binary.
 		data, err := os.ReadFile(local)
 		framework.ExpectNoError(err)
@@ -83,9 +91,15 @@ func setupDevsyCLI() {
 		return
 	}
 
+	downloadCompatCore()
+}
+
+func downloadCompatCore() {
+	ginkgo.GinkgoWriter.Printf("compatibility run against core %s\n", compatCoreVersion)
 	client := &http.Client{Timeout: time.Second * 30}
 	resp, err := client.Get(
-		"https://github.com/devsy-org/devsy/releases/download/v1.24.0/devsy-linux-amd64",
+		"https://github.com/devsy-org/devsy/releases/download/" + compatCoreVersion +
+			"/devsy-linux-amd64",
 	)
 	framework.ExpectNoError(err)
 	framework.ExpectEqual(resp.StatusCode, http.StatusOK)
@@ -115,7 +129,7 @@ func setupDevsyCLI() {
 }
 
 var _ = ginkgo.Describe(
-	"devsy provider ssh test suite",
+	"devsy provider ssh lifecycle suite (compatibility core "+compatCoreVersion+" unless overridden)",
 	ginkgo.Label("integration"),
 	ginkgo.Ordered,
 	func() {

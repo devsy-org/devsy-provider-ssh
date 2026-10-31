@@ -13,40 +13,35 @@ import (
 	"github.com/onsi/gomega"
 )
 
-var _ = ginkgo.Describe("SSH login shells", ginkgo.Label("integration"), func() {
-	ginkgo.BeforeEach(func() {
-		if os.Getenv("DEVSY_E2E_SHELL_MATRIX") != "true" {
-			ginkgo.Skip("requires provisioned Linux login shell accounts")
-		}
-		setupSSHKeys()
-	})
-	for _, shell := range []string{"bash", "zsh", "fish"} {
-		for _, builtin := range []bool{false, true} {
+var _ = ginkgo.Describe(
+	"SSH login shells",
+	ginkgo.Label("integration", "provider-command"),
+	func() {
+		ginkgo.BeforeEach(func() {
+			if os.Getenv("DEVSY_E2E_SHELL_MATRIX") != "true" {
+				ginkgo.Skip("requires provisioned Linux login shell accounts")
+			}
+			setupSSHKeys()
+		})
+		for _, cell := range shellTransports {
 			ginkgo.It(
-				fmt.Sprintf("preserves bootstrap streams with %s builtin=%t", shell, builtin),
+				fmt.Sprintf(
+					"preserves bootstrap streams with %s builtin=%t",
+					cell.shell,
+					cell.builtin,
+				),
 				func() {
 					home, err := os.UserHomeDir()
 					framework.ExpectNoError(err)
-					user := "devsy-" + shell
-					sshDir := "/home/" + user + "/.ssh"
-					for _, args := range [][]string{
-						{"install", "-d", "-m", "700", "-o", user, "-g", user, sshDir},
-						{
-							"install", "-m", "600", "-o", user, "-g", user,
-							filepath.Join(home, ".ssh", "id_rsa.pub"), sshDir + "/authorized_keys",
-						},
-					} {
-						// #nosec G204 -- Install only the controlled fixture key into provisioned test accounts.
-						output, err := exec.Command("sudo", args...).CombinedOutput()
-						framework.ExpectNoError(err, string(output))
-					}
+					user := "devsy-" + cell.shell
+					installLoginAccountKey(user)
 					payload := bytes.Repeat([]byte{0, 1, 2, 255, '\n', '\'', '\\'}, 512)
 					cmd := exec.Command(providerPath, "command")
 					cmd.Env = append(
 						os.Environ(),
 						"HOST="+user+"@127.0.0.1",
 						"PORT=22",
-						"USE_BUILTIN_SSH="+strconv.FormatBool(builtin),
+						"USE_BUILTIN_SSH="+strconv.FormatBool(cell.builtin),
 						"EXTRA_FLAGS=-i "+filepath.Join(home, ".ssh", "id_rsa"),
 						"AGENT_PATH=/tmp/devsy/agent",
 						"DOCKER_PATH=docker",
@@ -64,5 +59,22 @@ var _ = ginkgo.Describe("SSH login shells", ginkgo.Label("integration"), func() 
 				},
 			)
 		}
+	},
+)
+
+func installLoginAccountKey(user string) {
+	home, err := os.UserHomeDir()
+	framework.ExpectNoError(err)
+	sshDir := "/home/" + user + "/.ssh"
+	for _, args := range [][]string{
+		{"install", "-d", "-m", "700", "-o", user, "-g", user, sshDir},
+		{
+			"install", "-m", "600", "-o", user, "-g", user,
+			filepath.Join(home, ".ssh", "id_rsa.pub"), sshDir + "/authorized_keys",
+		},
+	} {
+		// #nosec G204 -- Install only the controlled fixture key into provisioned test accounts.
+		output, err := exec.Command("sudo", args...).CombinedOutput()
+		framework.ExpectNoError(err, string(output))
 	}
-})
+}

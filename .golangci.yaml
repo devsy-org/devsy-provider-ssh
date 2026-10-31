@@ -31,6 +31,16 @@ linters:
     - unparam
     - unused
     - whitespace
+  exclusions:
+    rules:
+      - path: hack/ci/qualify\.go
+        linters:
+          - gosec
+        text: 'G302: Expect file permissions to be 0600 or less'
+      - path: hack/ci/qualify\.go
+        linters:
+          - gosec
+        text: 'G204: Subprocess launched with variable'
   settings:
     cyclop:
       max-complexity: 8
