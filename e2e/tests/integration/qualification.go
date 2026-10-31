@@ -56,6 +56,20 @@ type scenarioResult struct {
 	Outcome string `json:"outcome"`
 }
 
+type shellTransport struct {
+	shell   string
+	builtin bool
+}
+
+var shellTransports = []shellTransport{
+	{shell: "bash"},
+	{shell: "bash", builtin: true},
+	{shell: "zsh"},
+	{shell: "zsh", builtin: true},
+	{shell: "fish"},
+	{shell: "fish", builtin: true},
+}
+
 type cellReport struct {
 	Shell         string            `json:"shell"`
 	User          string            `json:"user"`

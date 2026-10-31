@@ -7,7 +7,7 @@ on:
       core_tag:
         description: >-
           Core release tag to qualify with this provider checkout (for example
-          v1.25.0-beta.3). Runs the release-qualification job.
+          v1.25.0-beta.8). Runs the release-qualification job.
         required: false
         type: string
       provider_tag:
@@ -97,8 +97,6 @@ jobs:
       CORE_REPO: devsy-org/devsy
       PROVIDER_TAG: ${{ inputs.provider_tag }}
       CORE_ARTIFACT: ${{ matrix.core_artifact }}
-      # Merge commits that must be ancestors of the tested pair (issue #1621).
-      CORE_FIX_SHA: e22be00149ace87d512de0ec953541e3f7642c69
       PROVIDER_FIX_SHA: d31fed1b2695861b76e922c530ad8a2436f5acb9
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
@@ -115,82 +113,7 @@ jobs:
           go-version-file: go.mod
 
       - name: resolve and verify the candidate core
-        run: |
-          set -euo pipefail
-          if ! [[ "$CORE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            echo "::error::core_tag must look like v1.2.3 or v1.2.3-beta.1"
-            exit 1
-          fi
-          mkdir -p "$QUALIFICATION_DIR/core"
-
-          core_sha="$(gh api "repos/$CORE_REPO/commits/$CORE_TAG" --jq .sha)"
-          core_status="$(gh api "repos/$CORE_REPO/compare/$CORE_FIX_SHA...$core_sha" --jq .status)"
-          case "$core_status" in
-            ahead | identical) ;;
-            *)
-              echo "::error::core $CORE_TAG ($core_sha) does not contain $CORE_FIX_SHA (compare status: $core_status)"
-              exit 1
-              ;;
-          esac
-          provider_sha="$(git rev-parse --verify "refs/tags/$PROVIDER_TAG^{commit}")"
-          git merge-base --is-ancestor "$PROVIDER_FIX_SHA" "$provider_sha" || {
-            echo "::error::provider $PROVIDER_TAG does not contain $PROVIDER_FIX_SHA"
-            exit 1
-          }
-
-          case "$CORE_ARTIFACT" in
-            cli) asset=devsy-linux-amd64 ;;
-            desktop) asset=Devsy_linux_amd64.deb ;;
-            *) echo "::error::unknown core artifact $CORE_ARTIFACT"; exit 1 ;;
-          esac
-          gh release download "$CORE_TAG" --repo "$CORE_REPO" \
-            --pattern "$asset" --dir "$QUALIFICATION_DIR/core" --clobber
-          artifact="$QUALIFICATION_DIR/core/$asset"
-          artifact_sha256="$(sha256sum "$artifact" | cut -d' ' -f1)"
-          published_digest="$(gh api "repos/$CORE_REPO/releases/tags/$CORE_TAG" \
-            --jq ".assets[] | select(.name == \"$asset\") | .digest")"
-          if [ "$published_digest" != "sha256:$artifact_sha256" ]; then
-            echo "::error::downloaded $asset sha256:$artifact_sha256 differs from the published digest '$published_digest'"
-            exit 1
-          fi
-          core_binary="$artifact"
-          if [ "$CORE_ARTIFACT" = desktop ]; then
-            dpkg-deb --extract "$artifact" "$QUALIFICATION_DIR/core/desktop"
-            core_binary="$QUALIFICATION_DIR/core/desktop/opt/Devsy/resources/bin/devsy"
-          fi
-          test -f "$core_binary"
-          chmod 0755 "$core_binary"
-          core_sha256="$(sha256sum "$core_binary" | cut -d' ' -f1)"
-          core_version="$("$core_binary" --version)"
-          if [ "$core_version" != "$CORE_TAG" ]; then
-            echo "::error::core binary reports '$core_version', expected '$CORE_TAG'"
-            exit 1
-          fi
-
-          {
-            echo "DEVSY_E2E_BINARY=$core_binary"
-            echo "DEVSY_E2E_CORE_TAG=$CORE_TAG"
-            echo "DEVSY_E2E_CORE_SHA=$core_sha"
-            echo "DEVSY_E2E_CORE_VERSION=$core_version"
-            echo "DEVSY_E2E_PROVIDER_TAG=$PROVIDER_TAG"
-            echo "DEVSY_E2E_PROVIDER_SHA=$provider_sha"
-            echo "CORE_SHA256=$core_sha256"
-          } >> "$GITHUB_ENV"
-          {
-            echo "core tag: $CORE_TAG"
-            echo "core sha: $core_sha"
-            echo "core artifact: $asset"
-            echo "core artifact source: https://github.com/$CORE_REPO/releases/download/$CORE_TAG/$asset"
-            echo "tested binary platform: linux/amd64"
-            echo "core artifact sha256: $artifact_sha256 (matches published release digest)"
-            echo "tested core binary sha256: $core_sha256"
-            echo "core version: $core_version"
-            echo "core fix $CORE_FIX_SHA is an ancestor (compare status: $core_status)"
-            echo "provider tag: $PROVIDER_TAG"
-            echo "provider sha: $provider_sha"
-            echo "qualification harness sha: $(git rev-parse HEAD)"
-            echo "provider fix $PROVIDER_FIX_SHA is an ancestor"
-          } | tee "$QUALIFICATION_DIR/pair-verification.txt" >> "$GITHUB_STEP_SUMMARY"
+        run: go run ./hack/ci qualify-core
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 

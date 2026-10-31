@@ -24,7 +24,7 @@ Dispatch the `Tests` workflow with `core_tag` and `provider_tag` (default `v1.1.
 Two independent jobs qualify the standalone Linux amd64 CLI and the CLI extracted
 from the Desktop candidate's `Devsy_linux_amd64.deb`. Each job verifies the published
 asset digest, executes that binary's `--version`, records its SHA256, and checks that
-core `e22be00` and provider `d31fed1` are ancestors of the selected release commits.
+core `e22be00` and `9c80b29` and provider `d31fed1` are ancestors of the selected release commits.
 The provider binary and checksums come from the selected provider release.
 
 The jobs run `release-qualification || provider-command` and upload
@@ -33,6 +33,11 @@ The report identifies the exact core/provider pair and harness commit, all six
 shell/transport cells, five agent scenarios per cell, binary hashes, and cleanup.
 All six cells use an agent path containing a space, apostrophe, backslash, dollar
 sign, and Unicode character; every remote helper quotes the path literally.
+The shell/transport cases come from one shared matrix definition used by both the
+bootstrap stream checks and lifecycle qualification. Run qualification in one
+process: its fail-closed report state is process-local and does not aggregate across
+Ginkgo workers. Adding a shell or transport also requires updating the report gate
+and workflow account provisioning; the matrix definition alone is not sufficient.
 One additional focused scenario uses the dedicated non-root `devsy-sudo` account
 and a root-owned `0755` agent directory. It proves that an ordinary write is
 denied, a real sudo installation produces a root-owned candidate agent with the
@@ -54,9 +59,9 @@ disable the version check or select the wrong agent transport.
 
 ```
 DEVSY_E2E_RELEASE_QUALIFICATION=true DEVSY_E2E_SHELL_MATRIX=true \
-DEVSY_E2E_BINARY=/path/to/devsy-linux-amd64 DEVSY_E2E_CORE_TAG=v1.25.0-beta.3 \
-DEVSY_E2E_CORE_SHA=fe22f9a1225d6c1547001755e94c95bb2cdbc8db \
-DEVSY_E2E_CORE_VERSION=v1.25.0-beta.3 \
+DEVSY_E2E_BINARY=/path/to/devsy-linux-amd64 DEVSY_E2E_CORE_TAG=v1.25.0-beta.8 \
+DEVSY_E2E_CORE_SHA=f4d6039acf68bffcba9d1f9ce927cce144b7dc66 \
+DEVSY_E2E_CORE_VERSION=v1.25.0-beta.8 \
 DEVSY_E2E_PROVIDER_TAG=v1.1.47 \
 DEVSY_E2E_PROVIDER_SHA=c53ba2742db162f587aa57fbc87572d19ec11cd7 \
 go test -v -ginkgo.v -timeout 14400s \

@@ -23,39 +23,41 @@ var _ = ginkgo.Describe(
 			}
 			setupSSHKeys()
 		})
-		for _, shell := range []string{"bash", "zsh", "fish"} {
-			for _, builtin := range []bool{false, true} {
-				ginkgo.It(
-					fmt.Sprintf("preserves bootstrap streams with %s builtin=%t", shell, builtin),
-					func() {
-						home, err := os.UserHomeDir()
-						framework.ExpectNoError(err)
-						user := "devsy-" + shell
-						installLoginAccountKey(user)
-						payload := bytes.Repeat([]byte{0, 1, 2, 255, '\n', '\'', '\\'}, 512)
-						cmd := exec.Command(providerPath, "command")
-						cmd.Env = append(
-							os.Environ(),
-							"HOST="+user+"@127.0.0.1",
-							"PORT=22",
-							"USE_BUILTIN_SSH="+strconv.FormatBool(builtin),
-							"EXTRA_FLAGS=-i "+filepath.Join(home, ".ssh", "id_rsa"),
-							"AGENT_PATH=/tmp/devsy/agent",
-							"DOCKER_PATH=docker",
-							"COMMAND=printf 'READY\\n'\ncat\nprintf 'diagnostic' >&2\nexit 37",
-						)
-						cmd.Stdin = bytes.NewReader(payload)
-						var stdout, stderr bytes.Buffer
-						cmd.Stdout, cmd.Stderr = &stdout, &stderr
-						err = cmd.Run()
-						gomega.Expect(err).To(gomega.HaveOccurred())
-						gomega.Expect(cmd.ProcessState.ExitCode()).To(gomega.Equal(37))
-						gomega.Expect(stdout.Bytes()).
-							To(gomega.Equal(append([]byte("READY\n"), payload...)))
-						gomega.Expect(stderr.String()).To(gomega.ContainSubstring("diagnostic"))
-					},
-				)
-			}
+		for _, cell := range shellTransports {
+			ginkgo.It(
+				fmt.Sprintf(
+					"preserves bootstrap streams with %s builtin=%t",
+					cell.shell,
+					cell.builtin,
+				),
+				func() {
+					home, err := os.UserHomeDir()
+					framework.ExpectNoError(err)
+					user := "devsy-" + cell.shell
+					installLoginAccountKey(user)
+					payload := bytes.Repeat([]byte{0, 1, 2, 255, '\n', '\'', '\\'}, 512)
+					cmd := exec.Command(providerPath, "command")
+					cmd.Env = append(
+						os.Environ(),
+						"HOST="+user+"@127.0.0.1",
+						"PORT=22",
+						"USE_BUILTIN_SSH="+strconv.FormatBool(cell.builtin),
+						"EXTRA_FLAGS=-i "+filepath.Join(home, ".ssh", "id_rsa"),
+						"AGENT_PATH=/tmp/devsy/agent",
+						"DOCKER_PATH=docker",
+						"COMMAND=printf 'READY\\n'\ncat\nprintf 'diagnostic' >&2\nexit 37",
+					)
+					cmd.Stdin = bytes.NewReader(payload)
+					var stdout, stderr bytes.Buffer
+					cmd.Stdout, cmd.Stderr = &stdout, &stderr
+					err = cmd.Run()
+					gomega.Expect(err).To(gomega.HaveOccurred())
+					gomega.Expect(cmd.ProcessState.ExitCode()).To(gomega.Equal(37))
+					gomega.Expect(stdout.Bytes()).
+						To(gomega.Equal(append([]byte("READY\n"), payload...)))
+					gomega.Expect(stderr.String()).To(gomega.ContainSubstring("diagnostic"))
+				},
+			)
 		}
 	},
 )

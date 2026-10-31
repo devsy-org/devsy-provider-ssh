@@ -261,10 +261,8 @@ var _ = ginkgo.Describe(
 	"SSH login shell full workspace lifecycle",
 	ginkgo.Label("release-qualification"),
 	func() {
-		for _, shell := range []string{"bash", "zsh", "fish"} {
-			for _, builtin := range []bool{false, true} {
-				describeShellCell(shell, builtin)
-			}
+		for _, cell := range shellTransports {
+			describeShellCell(cell.shell, cell.builtin)
 		}
 	},
 )
