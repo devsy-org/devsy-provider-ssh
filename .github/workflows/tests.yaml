@@ -84,7 +84,7 @@ jobs:
   release-qualification:
     name: Release qualification (${{ matrix.core_artifact }}, explicit pair)
     if: github.event_name == 'workflow_dispatch' && inputs.core_tag != ''
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 240
     strategy:
       fail-fast: false

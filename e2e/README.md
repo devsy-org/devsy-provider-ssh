@@ -44,9 +44,14 @@ denied, a real sudo installation produces a root-owned candidate agent with the
 expected version/checksum, and workspace SSH still executes a live command.
 A skipped or incomplete matrix or privilege scenario cannot pass the report gate.
 
-To run by hand, use a disposable Linux amd64 host with local sshd, Docker, and
-provisioned `devsy-bash`, `devsy-zsh`, `devsy-fish`, and `devsy-sudo` accounts in the
-`docker` group. Use the workflow's provisioning on that owned host: only
+To run by hand, use a disposable Ubuntu 24.04 Linux amd64 host with local sshd,
+Docker, and provisioned `devsy-bash`, `devsy-zsh`, `devsy-fish`, and `devsy-sudo`
+accounts in the `docker` group. The release-qualification job is pinned to Ubuntu
+24.04 because its temporary sudoers rule uses command-argument wildcards accepted
+by classic sudo but rejected by sudo-rs on newer Ubuntu runners. This compatibility
+fixture grants the dedicated test account a broad root shell dispatch and is only
+for disposable qualification runners; it is not a production least-privilege policy.
+Use the workflow's provisioning on that owned host: only
 `devsy-sudo` receives the validated, temporary sudoers rule for
 `/bin/sh -c * devsy-install *`, with `NOPASSWD` and `SETENV` for the installer's
 explicit dispatch. Remove `/etc/sudoers.d/devsy-e2e-qualification` after the run,
