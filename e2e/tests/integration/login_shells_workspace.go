@@ -170,7 +170,7 @@ func (c *shellCell) agentVersion() string {
 }
 
 func (c *shellCell) agentSHA256() string {
-	return strings.Fields(c.mustRemote(shellquote.Join("sha256sum", "--", c.agentPath)))[0]
+	return strings.Fields(c.mustRemote("sha256sum < " + shellquote.Join(c.agentPath)))[0]
 }
 
 // agentInode changes on every atomic replacement and survives a reused agent.
