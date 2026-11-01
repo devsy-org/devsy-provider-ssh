@@ -53,8 +53,6 @@ rev = "v1.7.12"
 
 [[repos.hooks]]
 id = "actionlint"
-# v1.7.12 predates GitHub's background/wait steps; GitHub validates their syntax.
-args = ['-ignore', 'unexpected key "background" for step', '-ignore', 'step must run script with "run" section or run action with "uses" section']
 files = "^\\.github/workflows/"
 
 [[repos]]
@@ -66,7 +64,7 @@ id = "gitleaks"
 
 [[repos]]
 repo = "https://github.com/commitizen-tools/commitizen"
-rev = "v4.19.2"
+rev = "v4.19.3"
 
 [[repos.hooks]]
 id = "commitizen"
