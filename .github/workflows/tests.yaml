@@ -3,11 +3,29 @@ name: Tests
 on:
   pull_request:
   workflow_dispatch:
+    inputs:
+      core_tag:
+        description: Core release tag to qualify, for example v1.25.0-beta.8. Leave empty to skip qualification.
+        required: false
+        type: string
+      provider_tag:
+        description: Published SSH provider release to qualify
+        required: false
+        default: v1.1.47
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    name: Run Integration Tests
+    name: Integration tests (compatibility core v1.24.0, not release qualification)
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -22,7 +40,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bash zsh fish openssh-server
 
       - name: unit tests
-        run: go test -race -covermode=atomic . ./cmd/... ./hack/... ./pkg/...
+        run: go test -race -covermode=atomic . ./cmd/... ./hack/... ./pkg/... ./e2e/qualification/...
         env:
           CGO_ENABLED: "1"
 
@@ -44,11 +62,7 @@ jobs:
           du -sh "$(go env GOCACHE)" "$(go env GOMODCACHE)"
 
       - name: provision login shell accounts
-        run: |
-          sudo service ssh start
-          for shell in bash zsh fish; do
-            sudo useradd --create-home --shell "$(command -v "$shell")" "devsy-$shell"
-          done
+        run: go run ./hack/ci provision-accounts
 
       - name: integration tests
         working-directory: ./e2e
@@ -59,6 +73,7 @@ jobs:
   windows-stdin:
     name: Windows redirected SSH stdin
     runs-on: windows-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -68,3 +83,81 @@ jobs:
           go-version-file: go.mod
       - name: test redirected pipe bytes and cancellation
         run: go test ./pkg/ssh -run TestWindows -timeout 60s
+
+  release-qualification:
+    name: Release qualification (${{ matrix.core_artifact }}, explicit pair)
+    if: github.event_name == 'workflow_dispatch' && inputs.core_tag != ''
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        core_artifact: [cli, desktop]
+    env:
+      CORE_TAG: ${{ inputs.core_tag }}
+      CORE_REPO: devsy-org/devsy
+      PROVIDER_TAG: ${{ inputs.provider_tag }}
+      CORE_ARTIFACT: ${{ matrix.core_artifact }}
+      PROVIDER_FIX_SHA: d31fed1b2695861b76e922c530ad8a2436f5acb9
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: choose the qualification artifact directory
+        run: echo "QUALIFICATION_DIR=$RUNNER_TEMP/qualification" >> "$GITHUB_ENV"
+
+      - name: setup Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: resolve and verify the candidate core
+        run: go run ./hack/ci qualify-core
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: install login shells
+        run: sudo apt-get update && sudo apt-get install -y bash zsh fish openssh-server
+
+      - name: download and verify the released provider
+        run: go run ./hack/ci verify-provider
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: require the explicit candidate before SSH setup
+        run: go run ./hack/ci missing-candidate-guard
+        env:
+          DEVSY_E2E_RELEASE_QUALIFICATION: "true"
+
+      - name: provision qualification accounts
+        run: go run ./hack/ci provision-qualification-accounts
+
+      - name: qualify login shells with the explicit pair
+        working-directory: ./e2e
+        run: >-
+          go test -v -ginkgo.v -timeout 14400s
+          --ginkgo.label-filter='release-qualification || provider-command'
+        env:
+          DEVSY_E2E_RELEASE_QUALIFICATION: "true"
+          DEVSY_E2E_SHELL_MATRIX: "true"
+          DEVSY_E2E_REPORT: ${{ runner.temp }}/qualification/qualification-report.json
+
+      - name: remove qualification accounts and sudo fixture
+        if: always()
+        run: go run ./hack/ci cleanup-qualification-accounts
+
+      - name: verify the qualification report
+        run: go run ./hack/ci verify-report
+
+      - name: upload qualification report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-qualification-${{ inputs.core_tag }}-${{ matrix.core_artifact }}
+          path: |
+            ${{ runner.temp }}/qualification/pair-verification.txt
+            ${{ runner.temp }}/qualification/qualification-report.json
+            ${{ runner.temp }}/qualification/missing-binary-guard.log
+          if-no-files-found: error

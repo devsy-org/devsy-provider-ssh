@@ -31,6 +31,24 @@ linters:
     - unparam
     - unused
     - whitespace
+  exclusions:
+    rules:
+      - path: 'hack/ci/(qualify|verify_provider)\.go'
+        linters:
+          - gosec
+        text: 'G302: Expect file permissions to be 0600 or less'
+      - path: 'hack/ci/(exec|guard)\.go'
+        linters:
+          - gosec
+        text: 'G204|G702'
+      - path: 'hack/ci/provision_test\.go'
+        linters:
+          - gosec
+        text: 'G703'
+      - path: 'e2e/qualification/report\.go'
+        linters:
+          - gosec
+        text: 'G304'
   settings:
     cyclop:
       max-complexity: 8
