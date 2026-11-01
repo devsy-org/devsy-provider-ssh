@@ -1,13 +1,9 @@
 package main
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"regexp"
 	"strings"
 )
@@ -277,29 +273,6 @@ func writeEvidence(i qualificationInput, result qualificationResult) error {
 	return appendLines(os.Getenv("GITHUB_STEP_SUMMARY"), evidence)
 }
 
-func appendLines(path string, lines []string) error {
-	if path == "" {
-		return fmt.Errorf("output path is required")
-	}
-	directory, name := filepath.Split(filepath.Clean(path))
-	root, err := os.OpenRoot(directory)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = root.Close() }()
-	file, err := root.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = file.Close() }()
-	for _, line := range lines {
-		if _, err := fmt.Fprintln(file, line); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func validateAncestry(statuses []string) error {
 	if len(statuses) != len(coreFixes) {
 		return fmt.Errorf(
@@ -325,39 +298,6 @@ func validateAssetDigest(published, digest string) error {
 		return fmt.Errorf("sha256:%s differs from published digest %q", digest, published)
 	}
 	return nil
-}
-
-func parseSHA256Output(output string) (string, error) {
-	fields := strings.Fields(output)
-	if len(fields) < 2 || len(fields[0]) != sha256.Size*2 {
-		return "", fmt.Errorf("invalid sha256sum output %q", output)
-	}
-	if _, err := hex.DecodeString(fields[0]); err != nil {
-		return "", fmt.Errorf("invalid sha256sum output %q", output)
-	}
-	return fields[0], nil
-}
-
-func command(name string, args ...string) (string, error) {
-	var cmd *exec.Cmd
-	switch name {
-	case "gh":
-		cmd = exec.Command("gh", args...)
-	case "git":
-		cmd = exec.Command("git", args...)
-	case "sha256sum":
-		cmd = exec.Command("sha256sum", args...)
-	case "dpkg-deb":
-		cmd = exec.Command("dpkg-deb", args...)
-	default:
-		return "", fmt.Errorf("unsupported command %q", name)
-	}
-	cmd.Stderr = os.Stderr
-	output, err := cmd.Output()
-	if err != nil {
-		return "", fmt.Errorf("%s %s: %w", name, strings.Join(args, " "), err)
-	}
-	return string(output), nil
 }
 
 func validTag(tag string) bool {

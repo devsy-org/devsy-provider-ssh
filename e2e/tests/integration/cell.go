@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy-provider-ssh/e2e/qualification"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/kballard/go-shellquote"
 	"github.com/onsi/ginkgo/v2"
@@ -32,7 +33,6 @@ const (
 	pollTimeout   = 2 * time.Minute
 	pollInterval  = 5 * time.Second
 
-	// Debug lines the core CLI logs for the agent transport it selected.
 	logStdinTransfer        = "inject binary"
 	logRemoteDownload       = "prefer downloading agent from URL"
 	logHostSSHServerStarted = "starting ssh server: stdio=true"
@@ -50,10 +50,8 @@ func prepareQualification() {
 	})
 }
 
-// shellCell is one login shell and SSH implementation pair with its own Devsy home,
-// provider, workspace, and remote agent directory.
 type shellCell struct {
-	pair         qualifiedPair
+	pair         qualification.Pair
 	shell        string
 	user         string
 	builtin      bool
@@ -63,7 +61,7 @@ type shellCell struct {
 	agentPath    string
 	rootAgentDir bool
 	loginShell   string
-	report       *cellReport
+	report       *qualification.Cell
 }
 
 func newShellCell(shell string, builtin bool) *shellCell {
@@ -102,25 +100,12 @@ func (c *shellCell) mustDevsy(timeout time.Duration, env []string, args ...strin
 	return output
 }
 
-// remote runs a POSIX script on the account through the provider under test.
-// External SSH keeps helper commands independent of the transport being qualified.
 func (c *shellCell) remote(script string) (string, error) {
-	home, err := os.UserHomeDir()
-	framework.ExpectNoError(err)
 	ctx, cancel := context.WithTimeout(context.Background(), remoteTimeout)
 	defer cancel()
 	// #nosec G204 -- The provider binary is the artifact under test.
 	cmd := exec.CommandContext(ctx, providerPath, "command")
-	cmd.Env = append(
-		os.Environ(),
-		"HOST="+c.user+"@127.0.0.1",
-		"PORT=22",
-		"USE_BUILTIN_SSH=false",
-		"EXTRA_FLAGS="+shellquote.Join("-i", filepath.Join(home, ".ssh", "id_rsa")),
-		"AGENT_PATH="+c.agentPath,
-		"DOCKER_PATH=docker",
-		"COMMAND="+script,
-	)
+	cmd.Env = providerCommandEnv(c.user, false, c.agentPath, script)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
 	if err := cmd.Run(); err != nil {
@@ -157,8 +142,6 @@ func (c *shellCell) expectWorkspaceSSH() {
 	}).WithTimeout(pollTimeout).WithPolling(pollInterval).Should(gomega.ContainSubstring(marker))
 }
 
-// hostBootstrapOutput excludes the separate injection that delivers the agent
-// from the remote SSH host into the devcontainer.
 func hostBootstrapOutput(output string) string {
 	end := strings.Index(output, logHostSSHServerStarted)
 	gomega.Expect(end).To(gomega.BeNumerically(">", 0), "remote SSH server did not start")
@@ -173,7 +156,6 @@ func (c *shellCell) agentSHA256() string {
 	return strings.Fields(c.mustRemote("sha256sum < " + shellquote.Join(c.agentPath)))[0]
 }
 
-// agentInode changes on every atomic replacement and survives a reused agent.
 func (c *shellCell) agentInode() string {
 	return c.mustRemote(shellquote.Join("stat", "-c", "%i", "--", c.agentPath))
 }
@@ -187,7 +169,6 @@ func (c *shellCell) expectCandidateAgentInstalled() {
 }
 
 func (c *shellCell) installStaleAgent() {
-	// A prior agent process can still hold the installed executable open.
 	staged := shellquote.Join(c.agentPath + ".stale")
 	c.mustRemote(fmt.Sprintf(
 		"mkdir -p -- %s && printf '#!/bin/sh\\necho %s\\n' > %s "+
@@ -245,7 +226,6 @@ func (c *shellCell) cleanup() {
 }
 
 func (c *shellCell) removeAgentDirectory() error {
-	// Only the per-cell directory is removed, never a shared agent path.
 	if !strings.HasPrefix(c.agentDir, remoteAgentDirRoot) ||
 		len(c.agentDir) == len(remoteAgentDirRoot) {
 		return nil
@@ -257,44 +237,13 @@ func (c *shellCell) removeAgentDirectory() error {
 	return err
 }
 
-var _ = ginkgo.Describe(
-	"SSH login shell full workspace lifecycle",
-	ginkgo.Label("release-qualification"),
-	func() {
-		for _, cell := range shellTransports {
-			describeShellCell(cell.shell, cell.builtin)
-		}
-	},
-)
-
-func describeShellCell(shell string, builtin bool) {
-	ginkgo.Describe(shell+" builtin="+strconv.FormatBool(builtin), ginkgo.Ordered, func() {
-		cell := newShellCell(shell, builtin)
-		ginkgo.BeforeAll(cell.setup)
-		ginkgo.ReportAfterEach(cell.recordScenario)
-		ginkgo.It("installs a cold agent by remote download", cell.expectColdDownload)
-		ginkgo.It(
-			"reuses the current agent when the workspace is opened again",
-			cell.expectCurrentAgentReuse,
-		)
-		ginkgo.It("replaces a deliberately old agent", cell.expectStaleAgentReplacement)
-		ginkgo.It(
-			"installs a cold agent by stdin transfer and keeps stdin for the live stream",
-			cell.expectStdinTransfer,
-		)
-		ginkgo.It("leaves the account login shell unchanged", func() {
-			gomega.Expect(cell.passwdEntry()).To(gomega.Equal(cell.loginShell))
-		})
-	})
-}
-
 func (c *shellCell) setup() {
 	if !qualificationEnabled() {
 		ginkgo.Skip(envQualification + " is not set to true")
 	}
 	prepareQualification()
 	c.pair = requireQualifiedPair()
-	c.report = &cellReport{
+	c.report = &qualification.Cell{
 		Shell:       c.shell,
 		User:        c.user,
 		BuiltinSSH:  c.builtin,
@@ -337,64 +286,8 @@ func (c *shellCell) recordScenario(report ginkgo.SpecReport) {
 		report.State.Is(types.SpecStateSkipped|types.SpecStatePending) {
 		return
 	}
-	c.report.Scenarios = append(c.report.Scenarios, scenarioResult{
+	c.report.Scenarios = append(c.report.Scenarios, qualification.Scenario{
 		Name:    report.LeafNodeText,
 		Outcome: report.State.String(),
 	})
-}
-
-func (c *shellCell) expectColdDownload() {
-	output := c.up()
-	hostOutput := hostBootstrapOutput(output)
-	gomega.Expect(hostOutput).To(gomega.ContainSubstring(logRemoteDownload))
-	gomega.Expect(hostOutput).NotTo(gomega.ContainSubstring(logStdinTransfer))
-	c.expectCandidateAgentInstalled()
-	c.report.AgentSHA256["download"] = c.agentSHA256()
-	c.expectWorkspaceSSH()
-}
-
-func (c *shellCell) expectCurrentAgentReuse() {
-	inode := c.agentInode()
-	output := c.up()
-	hostOutput := hostBootstrapOutput(output)
-	gomega.Expect(hostOutput).NotTo(gomega.ContainSubstring(logStdinTransfer))
-	gomega.Expect(c.agentInode()).To(gomega.Equal(inode))
-	c.expectCandidateAgentInstalled()
-	c.expectWorkspaceSSH()
-}
-
-func (c *shellCell) expectStaleAgentReplacement() {
-	c.installStaleAgent()
-	staleInode := c.agentInode()
-	output := c.up()
-	hostOutput := hostBootstrapOutput(output)
-	gomega.Expect(hostOutput).To(gomega.ContainSubstring(logRemoteDownload))
-	gomega.Expect(hostOutput).NotTo(gomega.ContainSubstring(logStdinTransfer))
-	gomega.Expect(c.agentInode()).NotTo(gomega.Equal(staleInode))
-	c.expectCandidateAgentInstalled()
-	c.expectWorkspaceSSH()
-}
-
-func (c *shellCell) expectStdinTransfer() {
-	c.mustRemote(shellquote.Join("rm", "-rf", "--", c.agentDir))
-	stdinMode := []string{envAgentPreferDownload + "=false"}
-	output := c.up(stdinMode...)
-	hostOutput := hostBootstrapOutput(output)
-	gomega.Expect(hostOutput).To(gomega.ContainSubstring(logStdinTransfer))
-	c.expectCandidateAgentInstalled()
-	c.report.AgentSHA256["stdin"] = c.agentSHA256()
-	c.expectWorkspaceSSH()
-
-	inode := c.agentInode()
-	output = c.up(stdinMode...)
-	hostOutput = hostBootstrapOutput(output)
-	gomega.Expect(hostOutput).NotTo(gomega.ContainSubstring(logStdinTransfer))
-	gomega.Expect(c.agentInode()).To(gomega.Equal(inode))
-	c.expectWorkspaceSSH()
-}
-
-func sshPrivateKeyPath() string {
-	home, err := os.UserHomeDir()
-	framework.ExpectNoError(err)
-	return filepath.Join(home, ".ssh", "id_rsa")
 }
