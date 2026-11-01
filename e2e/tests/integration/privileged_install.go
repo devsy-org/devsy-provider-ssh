@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"strconv"
 
+	"github.com/devsy-org/devsy-provider-ssh/e2e/qualification"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/kballard/go-shellquote"
 	"github.com/onsi/ginkgo/v2"
@@ -14,7 +15,7 @@ import (
 
 var _ = ginkgo.Describe(
 	"SSH installer privilege transition",
-	ginkgo.Label("release-qualification"),
+	ginkgo.Label(labelReleaseQualification),
 	func() {
 		ginkgo.It(
 			"installs an executable agent through real sudo for a non-root user",
@@ -29,13 +30,12 @@ func qualifySudoInstallation() {
 	}
 	prepareQualification()
 	cell := newShellCell("bash", false)
-	cell.user = "devsy-sudo"
+	cell.user = qualification.PrivilegeUser
 	cell.rootAgentDir = true
-	result := &privilegeReport{User: cell.user, AgentDir: cell.agentDir, Outcome: "failed"}
+	result := &qualification.Privilege{User: cell.user, AgentDir: cell.agentDir, Outcome: "failed"}
 	registerPrivilegeReport(result)
 	ginkgo.DeferCleanup(func() { cell.finishPrivilegeReport(result) })
 	ginkgo.DeferCleanup(func() {
-		// Root directory creation can fail before setup registers its cleanup.
 		if cell.report == nil {
 			framework.ExpectNoError(cell.removeAgentDirectory())
 		}
@@ -62,7 +62,7 @@ func qualifySudoInstallation() {
 	result.Outcome = "passed"
 }
 
-func (c *shellCell) requireSudoPreconditions(result *privilegeReport) {
+func (c *shellCell) requireSudoPreconditions(result *qualification.Privilege) {
 	var err error
 	result.UserUID, err = strconv.ParseUint(c.mustRemote("id -u"), 10, 32)
 	framework.ExpectNoError(err)
@@ -78,7 +78,7 @@ func (c *shellCell) requireSudoPreconditions(result *privilegeReport) {
 	result.WriteDenied = true
 }
 
-func (c *shellCell) finishPrivilegeReport(result *privilegeReport) {
+func (c *shellCell) finishPrivilegeReport(result *qualification.Privilege) {
 	if c.report != nil {
 		result.CleanupStatus = c.report.CleanupStatus
 	}

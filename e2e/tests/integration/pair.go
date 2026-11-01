@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/devsy-org/devsy-provider-ssh/e2e/qualification"
 	"github.com/devsy-org/devsy/e2e/framework"
 	"github.com/onsi/ginkgo/v2"
 )
@@ -28,8 +29,6 @@ const (
 
 	defaultReportPath = "qualification-report.json"
 
-	// Any of these changes how the core selects the agent transport or disables the
-	// remote version check, so a qualification run must not inherit them.
 	envAgentURL            = "DEVSY_AGENT_URL"
 	envAgentBinary         = "DEVSY_AGENT_BINARY"
 	envAgentPreferDownload = "DEVSY_AGENT_PREFER_DOWNLOAD"
@@ -37,85 +36,17 @@ const (
 	devVersion = "v0.0.0"
 )
 
-// qualifiedPair identifies the exact core artifact and provider build under test.
-type qualifiedPair struct {
-	CoreBinary           string `json:"coreBinary"`
-	CoreTag              string `json:"coreTag"`
-	CoreSHA              string `json:"coreSha"`
-	CoreVersion          string `json:"coreVersion"`
-	CoreBinarySHA256     string `json:"coreBinarySha256"`
-	ProviderRef          string `json:"providerRef"`
-	ProviderSHA          string `json:"providerSha"`
-	ProviderBinary       string `json:"providerBinary"`
-	ProviderBinarySHA256 string `json:"providerBinarySha256"`
-	HarnessSHA           string `json:"harnessSha"`
-}
-
-type scenarioResult struct {
-	Name    string `json:"name"`
-	Outcome string `json:"outcome"`
-}
-
-type shellTransport struct {
-	shell   string
-	builtin bool
-}
-
-var shellTransports = []shellTransport{
-	{shell: "bash"},
-	{shell: "bash", builtin: true},
-	{shell: "zsh"},
-	{shell: "zsh", builtin: true},
-	{shell: "fish"},
-	{shell: "fish", builtin: true},
-}
-
-type cellReport struct {
-	Shell         string            `json:"shell"`
-	User          string            `json:"user"`
-	BuiltinSSH    bool              `json:"builtinSsh"`
-	Workspace     string            `json:"workspace"`
-	AgentDir      string            `json:"agentDir"`
-	LoginShell    string            `json:"loginShell"`
-	Scenarios     []scenarioResult  `json:"scenarios"`
-	AgentSHA256   map[string]string `json:"agentSha256"`
-	CleanupStatus string            `json:"cleanup"`
-}
-
-type privilegeReport struct {
-	User           string `json:"user"`
-	UserUID        uint64 `json:"userUid"`
-	AgentDir       string `json:"agentDir"`
-	DirectoryState string `json:"directoryState"`
-	WriteDenied    bool   `json:"writeDenied"`
-	WriteError     string `json:"writeError"`
-	AgentUID       uint64 `json:"agentUid"`
-	AgentVersion   string `json:"agentVersion"`
-	AgentSHA256    string `json:"agentSha256"`
-	LiveCommand    bool   `json:"liveCommand"`
-	Outcome        string `json:"outcome"`
-	CleanupStatus  string `json:"cleanup"`
-}
-
-type qualificationReport struct {
-	Pair      qualifiedPair    `json:"pair"`
-	Cells     []*cellReport    `json:"cells"`
-	Privilege *privilegeReport `json:"privilege"`
-}
-
 var (
 	qualificationMu    sync.Mutex
-	qualificationState *qualifiedPair
-	currentReport      = &qualificationReport{}
+	qualificationState *qualification.Pair
+	currentReport      = &qualification.Report{SchemaVersion: qualification.SchemaVersion}
 )
 
 func qualificationEnabled() bool {
 	return os.Getenv(envQualification) == "true"
 }
 
-// requireQualifiedPair fails instead of skipping: a release row that silently
-// falls back to a downloaded core would qualify the wrong pair.
-func requireQualifiedPair() qualifiedPair {
+func requireQualifiedPair() qualification.Pair {
 	qualificationMu.Lock()
 	defer qualificationMu.Unlock()
 	if qualificationState != nil {
@@ -124,7 +55,7 @@ func requireQualifiedPair() qualifiedPair {
 
 	requireQualificationEnvironment()
 
-	pair := qualifiedPair{
+	pair := qualification.Pair{
 		CoreBinary:     requiredEnv(envCoreBinary, "the candidate core CLI binary"),
 		CoreVersion:    requiredEnv(envCoreVersion, "the expected `devsy --version` output"),
 		CoreTag:        requiredEnv(envCoreTag, "the core release tag under test"),
@@ -206,13 +137,13 @@ func gitOutput(args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func registerCellReport(report *cellReport) {
+func registerCellReport(report *qualification.Cell) {
 	qualificationMu.Lock()
 	defer qualificationMu.Unlock()
 	currentReport.Cells = append(currentReport.Cells, report)
 }
 
-func registerPrivilegeReport(report *privilegeReport) {
+func registerPrivilegeReport(report *qualification.Privilege) {
 	qualificationMu.Lock()
 	defer qualificationMu.Unlock()
 	currentReport.Privilege = report
