@@ -58,12 +58,20 @@ func Init(ctx context.Context, provider *SSHProvider, streams Streams) error {
 		strings.ContainsRune(provider.Config.DockerPath, 0) {
 		return fmt.Errorf("remote executable or agent path contains NUL")
 	}
-	run := func(script string, output io.Writer) error {
+	remote := func(script string, output, errOutput io.Writer) error {
 		return provider.execRemoteScript(
 			ctx,
 			script,
-			Streams{Stdout: output, Stderr: streams.Stderr},
+			Streams{Stdout: output, Stderr: errOutput},
 		)
+	}
+	run := func(script string, output io.Writer) error {
+		return remote(script, output, streams.Stderr)
+	}
+	// Probe stderr is held back: a failed probe is often expected, and the
+	// caller decides whether to report it.
+	probe := func(script string, errOutput io.Writer) error {
+		return remote(script, io.Discard, errOutput)
 	}
 	if err := checkRemotePlatform(run); err != nil {
 		return err
@@ -75,7 +83,7 @@ func Init(ctx context.Context, provider *SSHProvider, streams Streams) error {
 	if uid == 0 {
 		return nil
 	}
-	return provider.checkAccess(run)
+	return provider.checkAccess(run, probe)
 }
 
 func checkRemotePlatform(run func(string, io.Writer) error) error {
@@ -111,7 +119,10 @@ func remoteUID(run func(string, io.Writer) error) (uint64, error) {
 	return uid, nil
 }
 
-func (provider *SSHProvider) checkAccess(run func(string, io.Writer) error) error {
+func (provider *SSHProvider) checkAccess(
+	run func(string, io.Writer) error,
+	probe func(string, io.Writer) error,
+) error {
 	agentDir, err := quotePOSIXArgument(path.Dir(provider.Config.AgentPath))
 	if err != nil {
 		return fmt.Errorf("agent path: %w", err)
@@ -123,8 +134,12 @@ func (provider *SSHProvider) checkAccess(run func(string, io.Writer) error) erro
 	if err := checkAgentDirectory(run, agentDir); err != nil {
 		return err
 	}
-	if err := run(dockerPath+" ps", io.Discard); err != nil {
+	var dockerStderr bytes.Buffer
+	if err := probe(dockerPath+" ps", &dockerStderr); err != nil {
 		if sudoErr := run("sudo -nl", io.Discard); sudoErr != nil {
+			if detail := strings.TrimSpace(dockerStderr.String()); detail != "" {
+				err = fmt.Errorf("%w: %s", err, detail)
+			}
 			return fmt.Errorf(
 				"docker executable inaccessible; passwordless sudo or docker group required: %w",
 				err,
