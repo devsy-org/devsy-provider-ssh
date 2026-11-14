@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.1.49](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.48...v1.1.49) (2026-11-14)
+
+
+### Bug Fixes
+
+* **provider:** correct ssh provider icon URL ([539c9c7](https://github.com/devsy-org/devsy-provider-ssh/commit/539c9c79019a642826e4929888e0de739a975b33))
+* **ssh:** hold back docker probe stderr during init ([c8a4f2d](https://github.com/devsy-org/devsy-provider-ssh/commit/c8a4f2d99617119679bd65c757d18bf09e40e020))
+
 ## [1.1.48](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.47...v1.1.48) (2026-11-12)
 
 
