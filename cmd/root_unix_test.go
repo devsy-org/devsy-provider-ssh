@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"syscall"
 	"testing"
@@ -52,27 +53,36 @@ func executeTestProcess(t *testing.T, script string) *exec.Cmd {
 	return exec.CommandContext(ctx, executable, "-test.run=^TestExecuteProcess$")
 }
 
-func TestExecuteCancellation(t *testing.T) {
-	cmd := executeTestProcess(t, "printf 'ready\\n'\nexec sleep 30\n")
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err = cmd.Start(); err != nil {
-		t.Fatal(err)
-	}
-	ready, err := bufio.NewReader(stdout).ReadString('\n')
-	if err != nil || ready != "ready\n" {
-		t.Fatalf("SSH child did not start: %q, %v", ready, err)
-	}
-	if err = cmd.Process.Signal(syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
-	assertProcessExit(t, cmd.Wait(), 1)
-	if !strings.Contains(stderr.String(), "context canceled") {
-		t.Fatalf("missing cancellation diagnostic: %q", stderr.String())
+func TestExecuteSignalEndsQuietlyAfterCleanup(t *testing.T) {
+	for _, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGINT} {
+		t.Run(sig.String(), func(t *testing.T) {
+			pidFile := filepath.Join(t.TempDir(), "ssh.pid")
+			cmd := executeTestProcess(
+				t,
+				"printf '%s' \"$$\" > '"+pidFile+"'\nprintf 'ready\\n'\nexec sleep 30\n",
+			)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
+			stdout, err := cmd.StdoutPipe()
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err = cmd.Start(); err != nil {
+				t.Fatal(err)
+			}
+			ready, err := bufio.NewReader(stdout).ReadString('\n')
+			if err != nil || ready != "ready\n" {
+				t.Fatalf("SSH child did not start: %q, %v", ready, err)
+			}
+			if err = cmd.Process.Signal(sig); err != nil {
+				t.Fatal(err)
+			}
+			assertProcessSignaled(t, cmd.Wait(), sig)
+			if stderr.Len() != 0 {
+				t.Fatalf("expected shutdown logged below error level, got %q", stderr.String())
+			}
+			assertChildGone(t, pidFile)
+		})
 	}
 }
 
@@ -91,5 +101,32 @@ func assertProcessExit(t *testing.T, err error, code int) {
 	var exit *exec.ExitError
 	if !errors.As(err, &exit) || exit.ExitCode() != code {
 		t.Fatalf("expected exit %d, got %v", code, err)
+	}
+}
+
+func assertProcessSignaled(t *testing.T, err error, want syscall.Signal) {
+	t.Helper()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) {
+		t.Fatalf("expected signal death, got %v", err)
+	}
+	status, ok := exit.Sys().(syscall.WaitStatus)
+	if !ok || !status.Signaled() || status.Signal() != want {
+		t.Fatalf("expected death by %s, got %v", want, err)
+	}
+}
+
+func assertChildGone(t *testing.T, pidFile string) {
+	t.Helper()
+	raw, err := os.ReadFile(pidFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, err := strconv.Atoi(strings.TrimSpace(string(raw)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := syscall.Kill(pid, 0); !errors.Is(err, syscall.ESRCH) {
+		t.Fatalf("SSH child %d survived shutdown: %v", pid, err)
 	}
 }
