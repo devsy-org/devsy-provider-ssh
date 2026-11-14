@@ -15,6 +15,8 @@ const (
 	providerName = "ssh"
 	githubOwner  = "devsy-org"
 	githubRepo   = "devsy-provider-ssh"
+	iconURL      = "https://raw.githubusercontent.com/devsy-org/devsy/main/" +
+		"desktop/src/renderer/public/icons/providers/ssh.svg"
 )
 
 type Provider struct {
@@ -145,8 +147,8 @@ func buildProvider(cfg *buildConfig) (Provider, error) {
 		Name:         providerName,
 		Version:      cfg.version,
 		Description:  "Devsy on SSH",
-		Icon:         "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/src/images/ssh.svg",
-		IconDark:     "https://raw.githubusercontent.com/devsy-org/devsy/main/desktop/src/images/ssh.svg",
+		Icon:         iconURL,
+		IconDark:     iconURL,
 		OptionGroups: buildOptionGroups(),
 		Options:      buildOptions(),
 		Agent:        buildAgent(),
