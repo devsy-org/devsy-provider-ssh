@@ -216,6 +216,48 @@ func TestInitQuotesRemotePaths(t *testing.T) {
 	}
 }
 
+func initWithMissingDocker(t *testing.T, sudoScript string) (stderr *bytes.Buffer, err error) {
+	t.Helper()
+	provider := fakeExternalSSH(t)
+	dir := t.TempDir()
+	probes := map[string]string{
+		"uname": "#!/bin/sh\nprintf 'Linux\\n'\n",
+		"id":    "#!/bin/sh\nprintf '1000\\n'\n",
+		"sudo":  sudoScript,
+	}
+	for name, contents := range probes {
+		// #nosec G306 -- Controlled platform probes must be executable.
+		requireNoError(t, os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o700))
+	}
+	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
+	provider.Config.AgentPath = filepath.Join(dir, "agent-dir", "agent")
+	provider.Config.DockerPath = filepath.Join(dir, "missing-docker")
+	stderr = &bytes.Buffer{}
+	err = Init(context.Background(), provider, Streams{Stdout: io.Discard, Stderr: stderr})
+	return stderr, err
+}
+
+func TestInitMissingDockerWithSudoIsQuiet(t *testing.T) {
+	stderr, err := initWithMissingDocker(t, "#!/bin/sh\nexit 0\n")
+	requireNoError(t, err)
+	if stderr.Len() != 0 {
+		t.Fatalf("docker probe stderr leaked: %q", stderr.String())
+	}
+}
+
+func TestInitMissingDockerWithoutSudoReportsProbeStderr(t *testing.T) {
+	stderr, err := initWithMissingDocker(t, "#!/bin/sh\nexit 1\n")
+	if err == nil {
+		t.Fatal("accepted missing docker without sudo")
+	}
+	if !strings.Contains(err.Error(), "missing-docker") {
+		t.Fatalf("error lacks probe stderr: %v", err)
+	}
+	if strings.Contains(stderr.String(), "missing-docker") {
+		t.Fatalf("probe stderr also streamed: %q", stderr.String())
+	}
+}
+
 func TestInitRejectsNULPaths(t *testing.T) {
 	provider := &SSHProvider{
 		Config: &options.Options{AgentPath: "/tmp/agent\x00suffix", DockerPath: "docker"},
