@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 
 	"github.com/devsy-org/devsy/pkg/log"
@@ -42,12 +43,23 @@ func Execute() {
 	rootCmd := BuildRoot()
 
 	// execute command
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, received, stop := notifyContext(context.Background())
 	err := rootCmd.ExecuteContext(ctx)
 	stop()
 	if err == nil {
 		return
 	}
+	// Devsy ends the tunnel by signalling this process once the remote work
+	// is done. Cleanup has already run, so report the signal as an expected
+	// end instead of a fatal error.
+	if sig := received(); sig != nil && errors.Is(err, context.Canceled) {
+		log.Debugf("stopped by %s", sig)
+		exitBySignal(sig)
+	}
+	exitWithError(err)
+}
+
+func exitWithError(err error) {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		log.Fatal(err)
 	}
@@ -61,6 +73,30 @@ func Execute() {
 		os.Exit(exitErr.ExitCode())
 	}
 	log.Fatal(err)
+}
+
+// notifyContext is signal.NotifyContext that also reports which signal fired.
+func notifyContext(parent context.Context) (context.Context, func() os.Signal, func()) {
+	ctx, cancel := context.WithCancel(parent)
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
+	var first atomic.Value
+	go func() {
+		select {
+		case sig := <-signals:
+			first.Store(sig)
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+	received := func() os.Signal {
+		sig, _ := first.Load().(os.Signal)
+		return sig
+	}
+	return ctx, received, func() {
+		signal.Stop(signals)
+		cancel()
+	}
 }
 
 // BuildRoot creates the SSH provider command tree.
