@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.50](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.49...v1.1.50) (2026-11-15)
+
+
+### Bug Fixes
+
+* **cmd:** end by signal instead of fatal error on tunnel teardown ([0dba70e](https://github.com/devsy-org/devsy-provider-ssh/commit/0dba70e212c2492f6043a44cd8ce14b01fb109b1))
+
 ## [1.1.49](https://github.com/devsy-org/devsy-provider-ssh/compare/v1.1.48...v1.1.49) (2026-11-14)
 
 
