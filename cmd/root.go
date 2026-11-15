@@ -56,6 +56,10 @@ func Execute() {
 		log.Debugf("stopped by %s", sig)
 		exitBySignal(sig)
 	}
+	exitWithError(err)
+}
+
+func exitWithError(err error) {
 	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 		log.Fatal(err)
 	}

@@ -118,6 +118,7 @@ func assertProcessSignaled(t *testing.T, err error, want syscall.Signal) {
 
 func assertChildGone(t *testing.T, pidFile string) {
 	t.Helper()
+	// #nosec G304 -- Path is a fixture file inside the test's temp directory.
 	raw, err := os.ReadFile(pidFile)
 	if err != nil {
 		t.Fatal(err)
