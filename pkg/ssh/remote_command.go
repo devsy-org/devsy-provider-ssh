@@ -14,6 +14,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/devsy-org/devsy/pkg/clierr"
+	"github.com/devsy-org/devsy/pkg/log"
 	devsyssh "github.com/devsy-org/devsy/pkg/ssh"
 	cryptossh "golang.org/x/crypto/ssh"
 )
@@ -59,6 +61,11 @@ func (provider *SSHProvider) execRemoteScript(
 	args, err := getSSHCommand(provider)
 	if err != nil {
 		return err
+	}
+	if log.TraceEnabled() {
+		args = append(args, "")
+		copy(args[1:], args[:len(args)-1])
+		args[0] = "-vv"
 	}
 	// #nosec G204 -- SSH arguments are explicit provider options; script is one encoded argument.
 	cmd := exec.CommandContext(ctx, "ssh", append(args, command)...)
@@ -179,6 +186,9 @@ func (provider *SSHProvider) execBuiltinWithDial(
 	}
 	conn, err := dial(ctx, "tcp", addr)
 	if err != nil {
+		if ctx.Err() == nil {
+			err = clierr.ClassifySSHConnection(err)
+		}
 		return fmt.Errorf("dial SSH: %w", err)
 	}
 	defer func() { _ = conn.Close() }()
@@ -186,6 +196,9 @@ func (provider *SSHProvider) execBuiltinWithDial(
 	defer stop()
 	sshConn, channels, requests, err := cryptossh.NewClientConn(conn, addr, config)
 	if err != nil {
+		if ctx.Err() == nil {
+			err = clierr.ClassifySSHConnection(err)
+		}
 		return fmt.Errorf("SSH handshake: %w", err)
 	}
 	client := cryptossh.NewClient(sshConn, channels, requests)

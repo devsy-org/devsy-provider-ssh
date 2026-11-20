@@ -126,7 +126,7 @@ func (c *shellCell) up(env ...string) string {
 	output := c.mustDevsy(
 		upTimeout, env,
 		"workspace", "up", fixture,
-		"--id", c.id, "--provider", c.id, "--ide=none", "--debug",
+		"--id", c.id, "--provider", c.id, "--ide=none", "--log-level", "debug",
 	)
 	ginkgo.GinkgoWriter.Println(output)
 	return output
@@ -204,7 +204,7 @@ func (c *shellCell) cleanup() {
 	var failures []string
 	if c.devsyHome != "" {
 		if output, err := c.devsy(
-			cliTimeout, nil, "workspace", "delete", "--force", "--debug", c.id,
+			cliTimeout, nil, "workspace", "delete", "--force", "--log-level", "debug", c.id,
 		); err != nil {
 			failures = append(failures, "workspace: "+err.Error()+": "+output)
 		}
