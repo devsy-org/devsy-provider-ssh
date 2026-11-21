@@ -47,6 +47,12 @@ This provider has the following options:
 | PORT            | false    | The SSH port to use.                                       | 22                |
 | USE_BUILTIN_SSH | false    | Use the builtin SSH package.                               | false             |
 
+## Logging
+
+Provider diagnostics are written to stderr as JSON by default. Set `DEVSY_LOG_LEVEL` to `error`, `warn`, `info`, `debug`, or `trace`. The standalone default is `info`. Devsy supplies its effective level when it starts the provider.
+
+Set `DEVSY_LOG_FORMAT` to `json`, `text`, `plain`, or `logfmt` to select a format. An unset value or `auto` selects JSON. At `trace` level, the external SSH client receives `-vv`. SSH command output and remote stderr remain on their established streams.
+
 # Extra
 
 For more detail, see the [Devsy Documentation](https://devsy.sh/docs/managing-providers/what-are-providers).

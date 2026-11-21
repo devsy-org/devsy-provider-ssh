@@ -115,7 +115,7 @@ line3`)
 		})
 
 		ginkgo.It("should run devsy up", func() {
-			cmd := exec.Command("bin/devsy", "workspace", "up", "--debug", "--ide=none", "../")
+			cmd := exec.Command("bin/devsy", "workspace", "up", "--ide=none", "../")
 			err := cmd.Run()
 			framework.ExpectNoError(err)
 		})
@@ -132,7 +132,6 @@ line3`)
 				"bin/devsy",
 				"workspace",
 				"delete",
-				"--debug",
 				"--force",
 				"devsy-provider-ssh",
 			)

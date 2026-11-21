@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/devsy-org/devsy-provider-ssh/pkg/options"
+	"github.com/devsy-org/devsy/pkg/clierr"
 	cryptossh "golang.org/x/crypto/ssh"
 )
 
@@ -106,6 +107,23 @@ func TestBuiltinDialCancellation(t *testing.T) {
 	})
 	if !errors.Is(err, dialErr) {
 		t.Fatalf("lost dial cause: %v", err)
+	}
+	if _, ok := errors.AsType[*clierr.CLIError](err); ok {
+		t.Fatalf("classified canceled dial: %v", err)
+	}
+}
+
+func TestBuiltinDialClassification(t *testing.T) {
+	provider := configTestProvider(t, "127.0.0.1:22", "")
+	cause := &net.OpError{Op: "dial", Net: "tcp", Err: errors.New("fixture")}
+	err := provider.execBuiltinWithDial(context.Background(), "unused", Streams{},
+		func(context.Context, string, string) (net.Conn, error) {
+			return nil, cause
+		})
+	var classified *clierr.CLIError
+	if !errors.As(err, &classified) || classified.Code != clierr.CodeSSHUnreachable ||
+		!errors.Is(err, cause) {
+		t.Fatalf("dial classification lost code or cause: %v", err)
 	}
 }
 
